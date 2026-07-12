@@ -6,9 +6,13 @@ import { articleTextBlock, createEventBody, feishuErrorMessage } from "./feishu.
 
 test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
-  assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "vercel-feishu-mcp");
+  assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.equal((listed as { result: { tools: unknown[] } }).result.tools.length, 13);
+  const tools = (listed as { result: { tools: { name: string }[] } }).result.tools;
+  assert.equal(tools.length, 13);
+  assert.ok(tools.some(({ name }) => name === "list_documents"));
+  assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
+  assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
 
 test("MCP rejects unknown methods", async () => {
@@ -16,8 +20,8 @@ test("MCP rejects unknown methods", async () => {
   assert.equal((response as { error: { code: number } }).error.code, -32601);
 });
 
-test("MCP validates event times before calling Feishu", async () => {
-  const response = await handleRpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "feishu_create_calendar_event", arguments: { calendar_id: "cal", summary: "测试", start_time: "200", end_time: "100" } } });
+test("MCP validates event times before calling the upstream service", async () => {
+  const response = await handleRpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "create_calendar_event", arguments: { calendar_id: "cal", summary: "测试", start_time: "200", end_time: "100" } } });
   assert.equal((response as { result: { isError: boolean } }).result.isError, true);
 });
 

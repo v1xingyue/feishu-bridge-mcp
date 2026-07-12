@@ -24,21 +24,21 @@ const TOOL_GROUPS = [
     tone: "blue",
     summary: "共享日历的创建、修改和删除",
     actions: ["列表", "创建", "修改", "删除"],
-    tools: ["feishu_list_calendars", "feishu_create_calendar", "feishu_update_calendar", "feishu_delete_calendar"],
+    tools: ["list_calendars", "create_calendar", "update_calendar", "delete_calendar"],
   },
   {
     title: "日程",
     tone: "green",
     summary: "按日历读取日程，并支持完整管理",
     actions: ["列表", "创建", "编辑", "删除"],
-    tools: ["feishu_list_calendar_events", "feishu_create_calendar_event", "feishu_update_calendar_event", "feishu_delete_calendar_event"],
+    tools: ["list_calendar_events", "create_calendar_event", "update_calendar_event", "delete_calendar_event"],
   },
   {
     title: "文章",
     tone: "purple",
-    summary: "飞书新版文档文章的 CRUD",
+    summary: "文档文章的 CRUD",
     actions: ["列表", "创建", "读取", "编辑", "删除"],
-    tools: ["feishu_list_documents", "feishu_create_article", "feishu_get_article", "feishu_update_article", "feishu_delete_article"],
+    tools: ["list_documents", "create_article", "get_article", "update_article", "delete_article"],
   },
 ] as const;
 
@@ -177,9 +177,9 @@ export default function Home() {
   const currentCalendar = calendars.find((item) => item.calendar_id === activeCalendar);
   const mcpUrl = `${callbackUrl.split("/api/auth/")[0]}/api/mcp`;
   const token = mcpToken || "<JWT_TOKEN>";
-  const mcpConfig = JSON.stringify({ mcpServers: { feishu: { url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
-  const openClawConfig = JSON.stringify({ mcp: { servers: { feishu: { url: mcpUrl, transport: "streamable-http", headers: { Authorization: `Bearer ${token}` } } } } }, null, 2);
-  const agentText = `请连接并使用以下远程 MCP Server：\n\n名称：Feishu Bridge\n传输协议：Streamable HTTP\nURL：${mcpUrl}\n请求头：Authorization: Bearer ${token}\n\n它提供飞书文档列表、日历列表、日程查询，以及日程创建、编辑和删除工具。请按照你当前 Agent 客户端支持的远程 MCP 配置方式添加，并在连接后调用 tools/list 验证。此 JWT 有效期为 ${tokenDays} 天，过期后需重新生成。`;
+  const mcpConfig = JSON.stringify({ mcpServers: { workspace_data: { url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
+  const openClawConfig = JSON.stringify({ mcp: { servers: { workspace_data: { url: mcpUrl, transport: "streamable-http", headers: { Authorization: `Bearer ${token}` } } } } }, null, 2);
+  const agentText = `请连接并使用以下远程 MCP Server：\n\n名称：Workspace Data\n传输协议：Streamable HTTP\nURL：${mcpUrl}\n请求头：Authorization: Bearer ${token}\n\n它提供工作空间文档列表、日历列表、日程查询，以及日程创建、编辑和删除工具。请按照你当前 Agent 客户端支持的远程 MCP 配置方式添加，并在连接后调用 tools/list 验证。此 JWT 有效期为 ${tokenDays} 天，过期后需重新生成。`;
 
   return (
     <main className="shell">
@@ -227,7 +227,7 @@ export default function Home() {
             </div>
           </ContentHeader>
         ) : (
-          <ContentHeader title="MCP 接入" description="将飞书文档和日程连接到支持 MCP 的 AI 客户端">
+          <ContentHeader title="MCP 接入" description="将工作空间文档和日程连接到支持 MCP 的 AI 客户端">
             <div className="connect-grid">
               <section className="connect-card generator-card"><div className="step">READY</div><h2>生成 MCP JWT Token</h2><p>登录验证仍由 NextAuth 负责；MCP JWT 单独使用 <code>MCP_JWT_SECRET</code> 签发。Token 只显示在当前页面。</p><label className="duration-field"><span>Token 有效期</span><select value={tokenDays} onChange={(e) => { setTokenDays(Number(e.target.value)); setMcpToken(""); setTokenExpiresAt(""); }}><option value={30}>30 天 · 短期使用</option><option value={180}>180 天 · 常规使用</option><option value={360}>360 天 · 长期使用</option></select></label><label className="token-field">MCP JWT Token<div><input type="password" readOnly value={mcpToken} placeholder="点击右侧按钮生成" /><button type="button" onClick={generateMcpToken} disabled={tokenLoading}>{tokenLoading ? "生成中…" : mcpToken ? "重新生成" : "生成 JWT"}</button></div></label>{tokenExpiresAt && <div className="token-expiry">有效期至 {new Date(tokenExpiresAt).toLocaleString("zh-CN")}</div>}{tokenError && <div className="form-error" role="alert">{tokenError}</div>}<GeneratedBlock title="JWT Token" value={token} copied={mcpCopied === "token"} onCopy={async () => { await navigator.clipboard.writeText(token); setMcpCopied("token"); }} /><GeneratedBlock title="通用 MCP JSON" value={mcpConfig} copied={mcpCopied === "config"} onCopy={async () => { await navigator.clipboard.writeText(mcpConfig); setMcpCopied("config"); }} /><GeneratedBlock title="OpenClaw JSON（openclaw.json）" value={openClawConfig} copied={mcpCopied === "openclaw"} onCopy={async () => { await navigator.clipboard.writeText(openClawConfig); setMcpCopied("openclaw"); }} /><GeneratedBlock title="发给任意 Agent 的文字说明" value={agentText} copied={mcpCopied === "agent"} onCopy={async () => { await navigator.clipboard.writeText(agentText); setMcpCopied("agent"); }} /></section>
               <section className="connect-card"><div className="step">01</div><h2>部署环境变量</h2><p>登录和 MCP JWT 使用两个互不影响的密钥。</p><Code>{`FEISHU_APP_ID=cli_xxx\nFEISHU_APP_SECRET=xxx\nAUTH_SECRET=NextAuth随机长字符串\nMCP_JWT_SECRET=MCP随机长字符串\nFEISHU_ALLOWED_OPEN_IDS=ou_reader\nFEISHU_ADMIN_OPEN_IDS=ou_admin`}</Code></section>

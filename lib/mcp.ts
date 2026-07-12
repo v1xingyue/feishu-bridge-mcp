@@ -4,18 +4,18 @@ type RpcRequest = { jsonrpc?: string; id?: string | number | null; method?: stri
 
 export const tools = [
   {
-    name: "feishu_list_documents",
-    description: "列出飞书云空间根目录中的文档、表格和文件",
+    name: "list_documents",
+    description: "列出工作空间根目录中的文档、表格和文件",
     inputSchema: { type: "object", properties: { page_size: { type: "integer", minimum: 1, maximum: 200, default: 50 } } },
   },
   {
-    name: "feishu_list_calendars",
-    description: "列出当前飞书应用可访问的日历",
+    name: "list_calendars",
+    description: "列出当前连接可访问的日历",
     inputSchema: { type: "object", properties: {} },
   },
   {
-    name: "feishu_list_calendar_events",
-    description: "列出指定飞书日历中的日程",
+    name: "list_calendar_events",
+    description: "列出指定日历中的日程",
     inputSchema: {
       type: "object",
       required: ["calendar_id"],
@@ -27,27 +27,27 @@ export const tools = [
     },
   },
   {
-    name: "feishu_create_calendar_event",
-    description: "在指定飞书日历中创建日程",
+    name: "create_calendar_event",
+    description: "在指定日历中创建日程",
     inputSchema: eventInputSchema(false),
   },
   {
-    name: "feishu_update_calendar_event",
-    description: "编辑指定飞书日程",
+    name: "update_calendar_event",
+    description: "编辑指定日程",
     inputSchema: eventInputSchema(true),
   },
   {
-    name: "feishu_delete_calendar_event",
-    description: "删除指定飞书日程",
+    name: "delete_calendar_event",
+    description: "删除指定日程",
     inputSchema: { type: "object", required: ["calendar_id", "event_id"], properties: { calendar_id: { type: "string" }, event_id: { type: "string" } } },
   },
-  { name: "feishu_create_calendar", description: "创建飞书共享日历", inputSchema: calendarSchema(false) },
-  { name: "feishu_update_calendar", description: "修改飞书共享日历", inputSchema: calendarSchema(true) },
-  { name: "feishu_delete_calendar", description: "删除飞书共享日历", inputSchema: { type: "object", required: ["calendar_id"], properties: { calendar_id: { type: "string" } } } },
-  { name: "feishu_create_article", description: "创建飞书新版文档文章", inputSchema: articleSchema(false) },
-  { name: "feishu_get_article", description: "读取飞书文章标题和纯文本正文", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string" } } } },
-  { name: "feishu_update_article", description: "修改飞书文章标题和纯文本正文", inputSchema: articleSchema(true) },
-  { name: "feishu_delete_article", description: "删除飞书文章", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string" } } } },
+  { name: "create_calendar", description: "创建共享日历", inputSchema: calendarSchema(false) },
+  { name: "update_calendar", description: "修改共享日历", inputSchema: calendarSchema(true) },
+  { name: "delete_calendar", description: "删除共享日历", inputSchema: { type: "object", required: ["calendar_id"], properties: { calendar_id: { type: "string" } } } },
+  { name: "create_article", description: "创建文档文章", inputSchema: articleSchema(false) },
+  { name: "get_article", description: "读取文章标题和纯文本正文", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string" } } } },
+  { name: "update_article", description: "修改文章标题和纯文本正文", inputSchema: articleSchema(true) },
+  { name: "delete_article", description: "删除文章", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string" } } } },
 ] as const;
 
 const ok = (id: RpcRequest["id"], result: unknown) => ({ jsonrpc: "2.0", id, result });
@@ -59,7 +59,7 @@ export async function handleRpc(request: RpcRequest) {
     return ok(request.id, {
       protocolVersion: "2025-03-26",
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "vercel-feishu-mcp", version: "0.1.0" },
+      serverInfo: { name: "workspace-data", version: "0.1.0" },
     });
   }
   if (request.method === "notifications/initialized") return null;
@@ -71,26 +71,26 @@ export async function handleRpc(request: RpcRequest) {
   const args = (request.params?.arguments || {}) as Record<string, unknown>;
   try {
     let data: unknown;
-    if (name === "feishu_list_documents") data = await listDocuments(Number(args.page_size) || 50);
-    else if (name === "feishu_list_calendars") data = await listCalendars();
-    else if (name === "feishu_list_calendar_events") {
+    if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
+    else if (name === "list_calendars") data = await listCalendars();
+    else if (name === "list_calendar_events") {
       if (typeof args.calendar_id !== "string" || !args.calendar_id) throw new Error("calendar_id 不能为空");
       data = await listCalendarEvents(args.calendar_id, stringArg(args.start_time), stringArg(args.end_time));
-    } else if (name === "feishu_create_calendar_event") data = await createCalendarEvent(requiredArg(args, "calendar_id"), eventArgs(args, false));
-    else if (name === "feishu_update_calendar_event") data = await updateCalendarEvent(requiredArg(args, "calendar_id"), requiredArg(args, "event_id"), eventArgs(args, true));
-    else if (name === "feishu_delete_calendar_event") data = await deleteCalendarEvent(requiredArg(args, "calendar_id"), requiredArg(args, "event_id"));
-    else if (name === "feishu_create_calendar") data = await createCalendar(calendarArgs(args));
-    else if (name === "feishu_update_calendar") data = await updateCalendar(requiredArg(args, "calendar_id"), calendarArgs(args));
-    else if (name === "feishu_delete_calendar") data = await deleteCalendar(requiredArg(args, "calendar_id"));
-    else if (name === "feishu_create_article") data = await createArticle(articleArgs(args));
-    else if (name === "feishu_get_article") data = await getArticle(requiredArg(args, "document_id"));
-    else if (name === "feishu_update_article") data = await updateArticle(requiredArg(args, "document_id"), articleArgs(args));
-    else if (name === "feishu_delete_article") data = await deleteArticle(requiredArg(args, "document_id"));
+    } else if (name === "create_calendar_event") data = await createCalendarEvent(requiredArg(args, "calendar_id"), eventArgs(args, false));
+    else if (name === "update_calendar_event") data = await updateCalendarEvent(requiredArg(args, "calendar_id"), requiredArg(args, "event_id"), eventArgs(args, true));
+    else if (name === "delete_calendar_event") data = await deleteCalendarEvent(requiredArg(args, "calendar_id"), requiredArg(args, "event_id"));
+    else if (name === "create_calendar") data = await createCalendar(calendarArgs(args));
+    else if (name === "update_calendar") data = await updateCalendar(requiredArg(args, "calendar_id"), calendarArgs(args));
+    else if (name === "delete_calendar") data = await deleteCalendar(requiredArg(args, "calendar_id"));
+    else if (name === "create_article") data = await createArticle(articleArgs(args));
+    else if (name === "get_article") data = await getArticle(requiredArg(args, "document_id"));
+    else if (name === "update_article") data = await updateArticle(requiredArg(args, "document_id"), articleArgs(args));
+    else if (name === "delete_article") data = await deleteArticle(requiredArg(args, "document_id"));
     else return error(request.id, -32602, `未知工具: ${String(name)}`);
     return ok(request.id, { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
   } catch (cause) {
     return ok(request.id, {
-      content: [{ type: "text", text: cause instanceof Error ? cause.message : "飞书请求失败" }],
+      content: [{ type: "text", text: cause instanceof Error ? cause.message : "上游服务请求失败" }],
       isError: true,
     });
   }
