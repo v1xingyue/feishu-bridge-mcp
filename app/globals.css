@@ -50,6 +50,7 @@ h1, h2, h3, p { margin-top: 0; }
 .open-label { margin-top: auto; color: var(--green); font-size: 12px; font-weight: 650; }.open-label span { float: right; font-size: 17px; }
 .document-actions { margin-top: auto; display: flex; gap: 9px; }.document-actions a, .document-actions button { border: 0; background: transparent; padding: 0; color: var(--green); font-size: 11px; font-weight: 650; text-decoration: none; cursor: pointer; }.document-actions .danger-action { color: #a63e3e; }
 .state { min-height: 240px; border: 1px dashed #cbd5d0; border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 30px; }.error-state { color: #9c3f3f; background: #fff7f6; border-color: #eac7c3; }
+.error-state a { display: inline-block; margin-top: 12px; color: #2457d6; font-weight: 700; }
 .spinner { width: 17px; height: 17px; border: 2px solid #b8d3c7; border-top-color: var(--green); border-radius: 50%; margin-right: 10px; animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 .calendar-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
 .calendar-list, .events-panel { border: 1px solid var(--line); background: rgba(255,255,255,.94); border-radius: 18px; box-shadow: var(--shadow); }

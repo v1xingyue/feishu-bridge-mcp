@@ -30,8 +30,18 @@ async function feishu<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
   const body = await response.json();
-  if (!response.ok || body.code !== 0) throw new Error(body.msg || `飞书请求失败 (${response.status})`);
+  if (!response.ok || body.code !== 0) throw new Error(feishuErrorMessage(body, response.status));
   return body.data as T;
+}
+
+export function feishuErrorMessage(body: { msg?: string; error?: { permission_violations?: { subject?: string; help_url?: string }[] } }, status: number) {
+  const violations = body.error?.permission_violations || [];
+  const permissions = [...new Set(violations.map((item) => item.subject).filter(Boolean))];
+  const matched = body.msg?.match(/\[([^\]]+)]/)?.[1].split(/[,，]\s*/).filter(Boolean) || [];
+  const required = permissions.length ? permissions : matched;
+  const appId = process.env.FEISHU_APP_ID || process.env.FEISHU_APP_KEY;
+  const permissionUrl = violations.find((item) => item.help_url)?.help_url || (appId && required.length ? `https://open.feishu.cn/app/${encodeURIComponent(appId)}/auth?q=${encodeURIComponent(required.join(","))}&op_from=openapi` : "");
+  return [body.msg || `飞书请求失败 (${status})`, required.length && `需要权限：${required.join("、")}`, permissionUrl && `申请权限：${permissionUrl}`].filter(Boolean).join("\n");
 }
 
 export type DocumentItem = {

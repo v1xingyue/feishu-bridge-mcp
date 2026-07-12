@@ -249,9 +249,13 @@ function Stat({ value, label }: { value: number; label: string }) { return <div 
 
 function State({ loading, error, empty, emptyText, children }: { loading: boolean; error: string; empty: boolean; emptyText: string; children: React.ReactNode }) {
   if (loading) return <div className="state"><span className="spinner" />正在同步飞书数据…</div>;
-  if (error) return <div className="state error-state">{error}</div>;
+  if (error) return <div className="state error-state"><ErrorMessage message={error} /></div>;
   if (empty) return <div className="state">{emptyText}</div>;
   return children;
+}
+
+function ErrorMessage({ message }: { message: string }) {
+  return <div>{message.split("\n").map((line) => line.startsWith("申请权限：http") ? <a key={line} href={line.slice(5)} target="_blank" rel="noreferrer">一键申请飞书权限</a> : <div key={line}>{line}</div>)}</div>;
 }
 
 function DocumentCard({ item, onEdit, onDelete }: { item: DocumentItem; onEdit: () => void; onDelete: () => void }) {

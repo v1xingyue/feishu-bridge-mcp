@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { authorized, isAdminOpenId, isAllowedOpenId, mcpTokenTtl, signMcpToken, verifyMcpToken } from "./auth.ts";
 import { handleRpc } from "./mcp.ts";
-import { articleTextBlock, createEventBody } from "./feishu.ts";
+import { articleTextBlock, createEventBody, feishuErrorMessage } from "./feishu.ts";
 
 test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
@@ -66,4 +66,12 @@ test("created events default to now +1h through now +3h", () => {
 
 test("article body becomes one plain-text docx block", () => {
   assert.deepEqual(articleTextBlock("正文"), { block_type: 2, text: { elements: [{ text_run: { content: "正文" } }] } });
+});
+
+test("Feishu permission errors list scopes and an application link", () => {
+  process.env.FEISHU_APP_ID = "cli_test";
+  const message = feishuErrorMessage({ msg: "Access denied [drive:drive:readonly, docx:document]" }, 403);
+  assert.match(message, /需要权限：drive:drive:readonly、docx:document/);
+  assert.match(message, /https:\/\/open\.feishu\.cn\/app\/cli_test\/auth\?q=/);
+  delete process.env.FEISHU_APP_ID;
 });
