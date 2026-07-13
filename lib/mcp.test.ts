@@ -9,18 +9,19 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
   assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string }> } }[] } }).result.tools;
+  const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string; default?: unknown }> } }[] } }).result.tools;
   assert.equal(tools.length, 15);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
   assert.ok(tools.some(({ name }) => name === "get_team_calendar"));
   assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
   assert.ok(tools.every((tool) => tool.description && Object.values(tool.inputSchema.properties).every((property) => property.description)));
+  assert.equal(tools.find(({ name }) => name === "add_image_watermark")?.inputSchema.properties.opacity.default, 0.35);
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
 
-test("image watermark tool returns an MCP image", async () => {
+test("image watermark tool returns an MCP image with Chinese text", async () => {
   const source = await sharp({ create: { width: 100, height: 80, channels: 3, background: "blue" } }).png().toBuffer();
-  const response = await handleRpc({ jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "TEST" } } });
+  const response = await handleRpc({ jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "中文水印" } } });
   const content = (response as { result: { content: { type: string; data?: string; mimeType?: string }[] } }).result.content;
   assert.equal(content[0].type, "image");
   assert.equal(content[0].mimeType, "image/png");
