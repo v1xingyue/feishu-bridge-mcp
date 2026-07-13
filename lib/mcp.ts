@@ -1,58 +1,8 @@
 import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, ensureTeamCalendar, getArticle, listCalendarEvents, listCalendars, listDocuments, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
+import { tools } from "./mcp-tools.ts";
+import { addTextWatermark } from "./watermark.ts";
 
 type RpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
-
-export const tools = [
-  {
-    name: "list_documents",
-    description: "列出工作空间根目录中的文档、表格和文件",
-    inputSchema: { type: "object", properties: { page_size: { type: "integer", minimum: 1, maximum: 200, default: 50 } } },
-  },
-  {
-    name: "list_calendars",
-    description: "列出当前连接可访问的日历",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "get_team_calendar",
-    description: "查看团队共享日历及其订阅方法；不存在时自动创建公开共享日历",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "list_calendar_events",
-    description: "列出日程；未指定 calendar_id 时使用团队共享日历",
-    inputSchema: {
-      type: "object",
-      properties: {
-        calendar_id: { type: "string", description: "可选；默认使用团队共享日历" },
-        start_time: { type: "string", description: "Unix 秒时间戳" },
-        end_time: { type: "string", description: "Unix 秒时间戳" },
-      },
-    },
-  },
-  {
-    name: "create_calendar_event",
-    get description() { return `创建日程；未指定 calendar_id 时使用团队共享日历。当前上海日期是 ${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date())}；“今天”、“明天”等相对日期必须以此为准换算，不得使用过去年份。`; },
-    inputSchema: eventInputSchema(false),
-  },
-  {
-    name: "update_calendar_event",
-    description: "编辑指定日程；未指定 calendar_id 时使用团队共享日历",
-    inputSchema: eventInputSchema(true),
-  },
-  {
-    name: "delete_calendar_event",
-    description: "删除指定日程；未指定 calendar_id 时使用团队共享日历",
-    inputSchema: { type: "object", required: ["event_id"], properties: { calendar_id: { type: "string", description: "可选；默认使用团队共享日历" }, event_id: { type: "string" } } },
-  },
-  { name: "create_calendar", description: "创建共享日历", inputSchema: calendarSchema(false) },
-  { name: "update_calendar", description: "修改共享日历", inputSchema: calendarSchema(true) },
-  { name: "delete_calendar", description: "删除共享日历", inputSchema: { type: "object", required: ["calendar_id"], properties: { calendar_id: { type: "string" } } } },
-  { name: "create_article", description: "创建文档文章", inputSchema: articleSchema(false) },
-  { name: "get_article", description: "读取文章标题和纯文本正文", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string" } } } },
-  { name: "update_article", description: "修改文章标题和纯文本正文", inputSchema: articleSchema(true) },
-  { name: "delete_article", description: "删除文章", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string" } } } },
-] as const;
 
 const ok = (id: RpcRequest["id"], result: unknown) => ({ jsonrpc: "2.0", id, result });
 const error = (id: RpcRequest["id"], code: number, message: string) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
@@ -76,6 +26,10 @@ export async function handleRpc(request: RpcRequest) {
   try {
     let data: unknown;
     if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
+    else if (name === "add_image_watermark") {
+      const image = await addTextWatermark({ image_base64: requiredArg(args, "image_base64"), text: requiredArg(args, "text"), position: stringArg(args.position), opacity: numberArg(args.opacity), font_size: numberArg(args.font_size) });
+      return ok(request.id, { content: [{ type: "image", data: image.data, mimeType: image.mimeType }, { type: "text", text: `${image.width}x${image.height}` }] });
+    }
     else if (name === "list_calendars") data = await listCalendars();
     else if (name === "get_team_calendar") data = await ensureTeamCalendar();
     else if (name === "list_calendar_events") {
@@ -104,6 +58,10 @@ function stringArg(value: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
+function numberArg(value: unknown) {
+  return typeof value === "number" ? value : undefined;
+}
+
 function requiredArg(args: Record<string, unknown>, name: string) {
   const value = stringArg(args[name]);
   if (!value) throw new Error(`${name} 不能为空`);
@@ -124,34 +82,10 @@ function eventArgs(args: Record<string, unknown>, requireTimes: boolean) {
   };
 }
 
-function eventInputSchema(editing: boolean) {
-  return {
-    type: "object",
-    required: editing ? ["event_id", "summary", "start_time", "end_time"] : ["summary"],
-    properties: {
-      calendar_id: { type: "string", description: "可选；默认使用团队共享日历" },
-      ...(editing ? { event_id: { type: "string" } } : {}),
-      summary: { type: "string" },
-      description: { type: "string" },
-      start_time: { type: "string", description: editing ? "Unix 秒时间戳" : "可选；默认当前时间后 1 小时" },
-      end_time: { type: "string", description: editing ? "Unix 秒时间戳" : "可选；默认开始时间后 2 小时" },
-      timezone: { type: "string", default: "Asia/Shanghai" },
-    },
-  };
-}
-
 function calendarArgs(args: Record<string, unknown>) {
   return { summary: requiredArg(args, "summary"), description: stringArg(args.description), permissions: (stringArg(args.permissions) || "private") as "private" | "show_only_free_busy" | "public" };
 }
 
-function calendarSchema(editing: boolean) {
-  return { type: "object", required: editing ? ["calendar_id", "summary"] : ["summary"], properties: { ...(editing ? { calendar_id: { type: "string" } } : {}), summary: { type: "string" }, description: { type: "string" }, permissions: { type: "string", enum: ["private", "show_only_free_busy", "public"], default: "private" } } };
-}
-
 function articleArgs(args: Record<string, unknown>) {
   return { title: requiredArg(args, "title"), content: stringArg(args.content), folder_token: stringArg(args.folder_token) };
-}
-
-function articleSchema(editing: boolean) {
-  return { type: "object", required: editing ? ["document_id", "title"] : ["title"], properties: { ...(editing ? { document_id: { type: "string" } } : {}), title: { type: "string" }, content: { type: "string", description: "纯文本正文" }, folder_token: { type: "string", description: "可选目标文件夹 token" } } };
 }

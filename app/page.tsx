@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { ToolDefinition, tools as MCP_TOOLS } from "@/lib/mcp-tools";
 
 type DocumentItem = { token: string; name: string; type: string; url?: string; modified_time?: string };
 type CalendarItem = { calendar_id: string; summary: string; description?: string; permissions?: "private" | "show_only_free_busy" | "public"; role?: string; type?: string };
@@ -19,6 +20,13 @@ type CalendarDraft = { id?: string; summary: string; description: string; permis
 type ArticleDraft = { id?: string; title: string; content: string };
 
 const TOOL_GROUPS = [
+  {
+    title: "图片",
+    tone: "orange",
+    summary: "为图片添加可调节的文字水印",
+    actions: ["文字水印"],
+    tools: ["add_image_watermark"],
+  },
   {
     title: "日历",
     tone: "blue",
@@ -180,7 +188,7 @@ export default function Home() {
   const token = mcpToken || "<JWT_TOKEN>";
   const mcpConfig = JSON.stringify({ mcpServers: { workspace_data: { url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
   const openClawConfig = JSON.stringify({ mcp: { servers: { workspace_data: { url: mcpUrl, transport: "streamable-http", headers: { Authorization: `Bearer ${token}` } } } } }, null, 2);
-  const agentText = `请连接并使用以下远程 MCP Server：\n\n名称：Workspace Data\n传输协议：Streamable HTTP\nURL：${mcpUrl}\n请求头：Authorization: Bearer ${token}\n\n它提供工作空间文档列表、日历列表、日程查询，以及日程创建、编辑和删除工具。请按照你当前 Agent 客户端支持的远程 MCP 配置方式添加，并在连接后调用 tools/list 验证。此 JWT 有效期为 ${tokenDays} 天，过期后需重新生成。`;
+  const agentText = `请连接并使用以下远程 MCP Server：\n\n名称：Workspace Data\n传输协议：Streamable HTTP\nURL：${mcpUrl}\n请求头：Authorization: Bearer ${token}\n\n它提供图片文字水印、工作空间文档、日历和日程管理工具。请按照你当前 Agent 客户端支持的远程 MCP 配置方式添加，并在连接后调用 tools/list 验证。此 JWT 有效期为 ${tokenDays} 天，过期后需重新生成。`;
 
   return (
     <main className="shell">
@@ -233,7 +241,7 @@ export default function Home() {
               <section className="connect-card generator-card"><div className="step">READY</div><h2>生成 MCP JWT Token</h2><p>登录验证仍由 NextAuth 负责；MCP JWT 单独使用 <code>MCP_JWT_SECRET</code> 签发。Token 只显示在当前页面。</p><label className="duration-field"><span>Token 有效期</span><select value={tokenDays} onChange={(e) => { setTokenDays(Number(e.target.value)); setMcpToken(""); setTokenExpiresAt(""); }}><option value={30}>30 天 · 短期使用</option><option value={180}>180 天 · 常规使用</option><option value={360}>360 天 · 长期使用</option></select></label><label className="token-field">MCP JWT Token<div><input type="password" readOnly value={mcpToken} placeholder="点击右侧按钮生成" /><button type="button" onClick={generateMcpToken} disabled={tokenLoading}>{tokenLoading ? "生成中…" : mcpToken ? "重新生成" : "生成 JWT"}</button></div></label>{tokenExpiresAt && <div className="token-expiry">有效期至 {new Date(tokenExpiresAt).toLocaleString("zh-CN")}</div>}{tokenError && <div className="form-error" role="alert">{tokenError}</div>}<GeneratedBlock title="JWT Token" value={token} copied={mcpCopied === "token"} onCopy={async () => { await navigator.clipboard.writeText(token); setMcpCopied("token"); }} /><GeneratedBlock title="通用 MCP JSON" value={mcpConfig} copied={mcpCopied === "config"} onCopy={async () => { await navigator.clipboard.writeText(mcpConfig); setMcpCopied("config"); }} /><GeneratedBlock title="OpenClaw JSON（openclaw.json）" value={openClawConfig} copied={mcpCopied === "openclaw"} onCopy={async () => { await navigator.clipboard.writeText(openClawConfig); setMcpCopied("openclaw"); }} /><GeneratedBlock title="发给任意 Agent 的文字说明" value={agentText} copied={mcpCopied === "agent"} onCopy={async () => { await navigator.clipboard.writeText(agentText); setMcpCopied("agent"); }} /></section>
               <section className="connect-card"><div className="step">01</div><h2>部署环境变量</h2><p>登录和 MCP JWT 使用两个互不影响的密钥。</p><Code>{`FEISHU_APP_ID=cli_xxx\nFEISHU_APP_SECRET=xxx\nAUTH_SECRET=NextAuth随机长字符串\nMCP_JWT_SECRET=MCP随机长字符串\nFEISHU_ALLOWED_OPEN_IDS=ou_reader\nFEISHU_ADMIN_OPEN_IDS=ou_admin`}</Code></section>
               <section className="connect-card"><div className="step">02</div><h2>添加 MCP Server</h2><p>Endpoint 使用当前域名，认证方式为 Bearer JWT。</p><Code>{`URL  https://你的域名/api/mcp\nAuthorization  Bearer <JWT_TOKEN>`}</Code></section>
-              <section className="connect-card tools-card"><div className="tools-head"><div><div className="step">03</div><h2>可用工具</h2><p>连接成功后可在 Agent 里调用以下 MCP tools。</p></div><strong>{TOOL_GROUPS.reduce((count, group) => count + group.tools.length, 0)} tools</strong></div><div className="tool-groups">{TOOL_GROUPS.map((group) => <ToolGroup key={group.title} group={group} />)}</div></section>
+              <section className="connect-card tools-card"><div className="tools-head"><div><div className="step">03</div><h2>可用工具</h2><p>点击工具名称查看功能描述、必填参数和取值限制。</p></div><strong>{MCP_TOOLS.length} tools</strong></div><div className="tool-groups">{TOOL_GROUPS.map((group) => <ToolGroup key={group.title} group={group} />)}</div></section>
             </div>
           </ContentHeader>
         )}
@@ -305,7 +313,16 @@ function EventEditor({ event, onCancel, onSave }: { event?: EventItem; onCancel:
 
 function Code({ children }: { children: string }) { return <pre><code>{children}</code></pre>; }
 function GeneratedBlock({ title, value, copied, onCopy }: { title: string; value: string; copied: boolean; onCopy: () => void }) { return <div className="generated-block"><div><strong>{title}</strong><button type="button" onClick={onCopy}>{copied ? "已复制" : "复制"}</button></div><pre><code>{value}</code></pre></div>; }
-function ToolGroup({ group }: { group: typeof TOOL_GROUPS[number] }) { return <article className={`tool-group tone-${group.tone}`}><div className="tool-group-top"><span className="tool-mark">{group.title.slice(0, 1)}</span><div><h3>{group.title}</h3><p>{group.summary}</p></div></div><div className="tool-actions">{group.actions.map((action) => <span key={action}>{action}</span>)}</div><div className="tool-methods">{group.tools.map((tool) => <code key={tool}>{tool}</code>)}</div></article>; }
+function ToolGroup({ group }: { group: typeof TOOL_GROUPS[number] }) { return <article className={`tool-group tone-${group.tone}`}><div className="tool-group-top"><span className="tool-mark">{group.title.slice(0, 1)}</span><div><h3>{group.title}</h3><p>{group.summary}</p></div></div><div className="tool-actions">{group.actions.map((action) => <span key={action}>{action}</span>)}</div><div className="tool-methods">{group.tools.map((name) => <ToolDetails key={name} tool={MCP_TOOLS.find((tool) => tool.name === name)!} />)}</div></article>; }
+function ToolDetails({ tool }: { tool: ToolDefinition }) {
+  const required = new Set(tool.inputSchema.required || []);
+  const parameters = Object.entries(tool.inputSchema.properties);
+  return <details className="tool-method"><summary><code>{tool.name}</code><span>详情</span></summary><div className="tool-detail"><p>{tool.description}</p><h4>参数</h4>{parameters.length ? <dl>{parameters.map(([name, property]) => <div key={name}><dt><code>{name}</code><span className={required.has(name) ? "required" : "optional"}>{required.has(name) ? "必填" : "可选"}</span></dt><dd><strong>{property.type}</strong> · {property.description}{propertyRules(property)}</dd></div>)}</dl> : <p className="no-params">无需参数</p>}</div></details>;
+}
+function propertyRules(property: ToolDefinition["inputSchema"]["properties"][string]) {
+  const rules = [property.enum && `可选值：${property.enum.join("、")}`, property.default !== undefined && `默认：${String(property.default)}`, property.minimum !== undefined && property.maximum !== undefined && `范围：${property.minimum}–${property.maximum}`, property.maxLength !== undefined && `最长：${property.maxLength} 字符`].filter(Boolean);
+  return rules.length ? `（${rules.join("；")}）` : "";
+}
 function fileLabel(type: string) { return ({ doc: "D", docx: "D", sheet: "S", bitable: "B", mindnote: "M", file: "F", folder: "▢" } as Record<string, string>)[type] || "F"; }
 function formatTime(value: string) { const date = new Date(Number(value) * 1000); return Number.isNaN(date.valueOf()) ? value : date.toLocaleDateString("zh-CN"); }
 function localDateTime(date: Date) { return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
