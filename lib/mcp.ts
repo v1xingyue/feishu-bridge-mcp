@@ -28,7 +28,7 @@ export const tools = [
   },
   {
     name: "create_calendar_event",
-    description: "在指定日历中创建日程",
+    get description() { return `在指定日历中创建日程。当前上海日期是 ${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date())}；“今天”、“明天”等相对日期必须以此为准换算，不得使用过去年份。`; },
     inputSchema: eventInputSchema(false),
   },
   {

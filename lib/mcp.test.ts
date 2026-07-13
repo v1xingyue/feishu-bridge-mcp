@@ -15,6 +15,14 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
 
+test("calendar tools expose today's Shanghai date for relative-time requests", async () => {
+  const listed = await handleRpc({ jsonrpc: "2.0", id: 20, method: "tools/list" });
+  const tools = (listed as { result: { tools: { name: string; description: string }[] } }).result.tools;
+  const createEvent = tools.find(({ name }) => name === "create_calendar_event");
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
+  assert.match(createEvent?.description || "", new RegExp(today));
+});
+
 test("MCP rejects unknown methods", async () => {
   const response = await handleRpc({ jsonrpc: "2.0", id: 3, method: "missing" });
   assert.equal((response as { error: { code: number } }).error.code, -32601);
