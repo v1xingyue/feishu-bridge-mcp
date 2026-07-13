@@ -11,7 +11,7 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   const tools = (listed as { result: { tools: { name: string }[] } }).result.tools;
   assert.equal(tools.length, 14);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
-  assert.ok(tools.some(({ name }) => name === "ensure_team_calendar"));
+  assert.ok(tools.some(({ name }) => name === "get_team_calendar"));
   assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
@@ -85,12 +85,20 @@ test("cancelled events are hidden from calendar lists", () => {
 });
 
 test("team calendar must be shared and subscribable", () => {
-  const team = { calendar_id: "team", summary: "团队日历", type: "shared", permissions: "public" };
+  const team = { calendar_id: "team", summary: "团队共享日历", type: "shared", permissions: "public" };
   assert.equal(findTeamCalendar([
     { ...team, calendar_id: "primary", type: "primary" },
     { ...team, calendar_id: "private", permissions: "private" },
     team,
   ]), team);
+});
+
+test("calendar event tools default to the team calendar", async () => {
+  const listed = await handleRpc({ jsonrpc: "2.0", id: 21, method: "tools/list" });
+  const tools = (listed as { result: { tools: { name: string; inputSchema: { required?: readonly string[] } }[] } }).result.tools;
+  for (const name of ["list_calendar_events", "create_calendar_event", "update_calendar_event", "delete_calendar_event"]) {
+    assert.ok(!tools.find((tool) => tool.name === name)?.inputSchema.required?.includes("calendar_id"));
+  }
 });
 
 test("article body becomes one plain-text docx block", () => {

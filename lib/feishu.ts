@@ -99,16 +99,27 @@ export async function ensureTeamCalendar() {
   do {
     const page = await listCalendars(50, pageToken);
     const calendar = findTeamCalendar(page.items);
-    if (calendar) return { calendar, created: false };
+    if (calendar) return teamCalendarResult(calendar, false);
     pageToken = page.pageToken;
     if (!page.hasMore) break;
   } while (pageToken);
-  const { calendar } = await createCalendar({ summary: "团队日历", permissions: "public" });
-  return { calendar, created: true };
+  const { calendar } = await createCalendar({ summary: "团队共享日历", permissions: "public" });
+  return teamCalendarResult(calendar, true);
 }
 
 export function findTeamCalendar(items: CalendarItem[]) {
-  return items.find((calendar) => calendar.summary === "团队日历" && calendar.type === "shared" && (calendar.permissions === "public" || calendar.permissions === "show_only_free_busy"));
+  return items.find((calendar) => (calendar.summary === "团队共享日历" || calendar.summary === "团队日历") && calendar.type === "shared" && (calendar.permissions === "public" || calendar.permissions === "show_only_free_busy"));
+}
+
+function teamCalendarResult(calendar: CalendarItem, created: boolean) {
+  return {
+    calendar,
+    created,
+    subscription: {
+      calendar_id: calendar.calendar_id,
+      method: `在飞书日历左侧点击「＋」→「订阅日历」，搜索“${calendar.summary}”`,
+    },
+  };
 }
 
 export function createCalendar(input: CalendarInput) {

@@ -14,18 +14,17 @@ export const tools = [
     inputSchema: { type: "object", properties: {} },
   },
   {
-    name: "ensure_team_calendar",
-    description: "确保存在可供成员订阅的公开共享团队日历；存在则直接返回，否则创建后返回",
+    name: "get_team_calendar",
+    description: "查看团队共享日历及其订阅方法；不存在时自动创建公开共享日历",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_calendar_events",
-    description: "列出指定日历中的日程",
+    description: "列出日程；未指定 calendar_id 时使用团队共享日历",
     inputSchema: {
       type: "object",
-      required: ["calendar_id"],
       properties: {
-        calendar_id: { type: "string" },
+        calendar_id: { type: "string", description: "可选；默认使用团队共享日历" },
         start_time: { type: "string", description: "Unix 秒时间戳" },
         end_time: { type: "string", description: "Unix 秒时间戳" },
       },
@@ -33,18 +32,18 @@ export const tools = [
   },
   {
     name: "create_calendar_event",
-    get description() { return `在指定日历中创建日程。当前上海日期是 ${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date())}；“今天”、“明天”等相对日期必须以此为准换算，不得使用过去年份。`; },
+    get description() { return `创建日程；未指定 calendar_id 时使用团队共享日历。当前上海日期是 ${new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date())}；“今天”、“明天”等相对日期必须以此为准换算，不得使用过去年份。`; },
     inputSchema: eventInputSchema(false),
   },
   {
     name: "update_calendar_event",
-    description: "编辑指定日程",
+    description: "编辑指定日程；未指定 calendar_id 时使用团队共享日历",
     inputSchema: eventInputSchema(true),
   },
   {
     name: "delete_calendar_event",
-    description: "删除指定日程",
-    inputSchema: { type: "object", required: ["calendar_id", "event_id"], properties: { calendar_id: { type: "string" }, event_id: { type: "string" } } },
+    description: "删除指定日程；未指定 calendar_id 时使用团队共享日历",
+    inputSchema: { type: "object", required: ["event_id"], properties: { calendar_id: { type: "string", description: "可选；默认使用团队共享日历" }, event_id: { type: "string" } } },
   },
   { name: "create_calendar", description: "创建共享日历", inputSchema: calendarSchema(false) },
   { name: "update_calendar", description: "修改共享日历", inputSchema: calendarSchema(true) },
@@ -78,13 +77,12 @@ export async function handleRpc(request: RpcRequest) {
     let data: unknown;
     if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
     else if (name === "list_calendars") data = await listCalendars();
-    else if (name === "ensure_team_calendar") data = await ensureTeamCalendar();
+    else if (name === "get_team_calendar") data = await ensureTeamCalendar();
     else if (name === "list_calendar_events") {
-      if (typeof args.calendar_id !== "string" || !args.calendar_id) throw new Error("calendar_id 不能为空");
-      data = await listCalendarEvents(args.calendar_id, stringArg(args.start_time), stringArg(args.end_time));
-    } else if (name === "create_calendar_event") data = await createCalendarEvent(requiredArg(args, "calendar_id"), eventArgs(args, false));
-    else if (name === "update_calendar_event") data = await updateCalendarEvent(requiredArg(args, "calendar_id"), requiredArg(args, "event_id"), eventArgs(args, true));
-    else if (name === "delete_calendar_event") data = await deleteCalendarEvent(requiredArg(args, "calendar_id"), requiredArg(args, "event_id"));
+      data = await listCalendarEvents(await calendarId(args), stringArg(args.start_time), stringArg(args.end_time));
+    } else if (name === "create_calendar_event") data = await createCalendarEvent(await calendarId(args), eventArgs(args, false));
+    else if (name === "update_calendar_event") data = await updateCalendarEvent(await calendarId(args), requiredArg(args, "event_id"), eventArgs(args, true));
+    else if (name === "delete_calendar_event") data = await deleteCalendarEvent(await calendarId(args), requiredArg(args, "event_id"));
     else if (name === "create_calendar") data = await createCalendar(calendarArgs(args));
     else if (name === "update_calendar") data = await updateCalendar(requiredArg(args, "calendar_id"), calendarArgs(args));
     else if (name === "delete_calendar") data = await deleteCalendar(requiredArg(args, "calendar_id"));
@@ -112,6 +110,10 @@ function requiredArg(args: Record<string, unknown>, name: string) {
   return value;
 }
 
+async function calendarId(args: Record<string, unknown>) {
+  return stringArg(args.calendar_id) || (await ensureTeamCalendar()).calendar.calendar_id;
+}
+
 function eventArgs(args: Record<string, unknown>, requireTimes: boolean) {
   return {
     summary: requiredArg(args, "summary"),
@@ -125,9 +127,9 @@ function eventArgs(args: Record<string, unknown>, requireTimes: boolean) {
 function eventInputSchema(editing: boolean) {
   return {
     type: "object",
-    required: editing ? ["calendar_id", "event_id", "summary", "start_time", "end_time"] : ["calendar_id", "summary"],
+    required: editing ? ["event_id", "summary", "start_time", "end_time"] : ["summary"],
     properties: {
-      calendar_id: { type: "string" },
+      calendar_id: { type: "string", description: "可选；默认使用团队共享日历" },
       ...(editing ? { event_id: { type: "string" } } : {}),
       summary: { type: "string" },
       description: { type: "string" },
