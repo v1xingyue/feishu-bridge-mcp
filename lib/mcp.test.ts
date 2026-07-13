@@ -26,6 +26,7 @@ test("image watermark tool returns an MCP image with Chinese text", async () => 
   assert.equal(content[0].type, "image");
   assert.equal(content[0].mimeType, "image/png");
   assert.notDeepEqual(Buffer.from(content[0].data!, "base64"), source);
+  assert.match(JSON.stringify(content), /sharp-fontfile-v1/);
 });
 
 test("calendar tools expose today's Shanghai date for relative-time requests", async () => {
