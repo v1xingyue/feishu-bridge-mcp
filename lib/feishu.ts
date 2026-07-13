@@ -60,6 +60,7 @@ export type CalendarItem = {
   permissions?: string;
   color?: number;
   role?: string;
+  type?: string;
 };
 
 export type CalendarInput = { summary: string; description?: string; permissions?: "private" | "show_only_free_busy" | "public" };
@@ -84,11 +85,30 @@ export async function listDocuments(pageSize = 50) {
   return { items: data.files || [], hasMore: !!data.has_more, pageToken: data.page_token };
 }
 
-export async function listCalendars(pageSize = 50) {
+export async function listCalendars(pageSize = 50, pageToken?: string) {
+  const query = new URLSearchParams({ page_size: String(Math.min(Math.max(pageSize, 1), 50)) });
+  if (pageToken) query.set("page_token", pageToken);
   const data = await feishu<{ calendar_list?: CalendarItem[]; has_more?: boolean; page_token?: string }>(
-    `/calendar/v4/calendars?page_size=${Math.min(Math.max(pageSize, 1), 50)}`,
+    `/calendar/v4/calendars?${query}`,
   );
   return { items: data.calendar_list || [], hasMore: !!data.has_more, pageToken: data.page_token };
+}
+
+export async function ensureTeamCalendar() {
+  let pageToken: string | undefined;
+  do {
+    const page = await listCalendars(50, pageToken);
+    const calendar = findTeamCalendar(page.items);
+    if (calendar) return { calendar, created: false };
+    pageToken = page.pageToken;
+    if (!page.hasMore) break;
+  } while (pageToken);
+  const { calendar } = await createCalendar({ summary: "团队日历", permissions: "public" });
+  return { calendar, created: true };
+}
+
+export function findTeamCalendar(items: CalendarItem[]) {
+  return items.find((calendar) => calendar.summary === "团队日历" && calendar.type === "shared" && (calendar.permissions === "public" || calendar.permissions === "show_only_free_busy"));
 }
 
 export function createCalendar(input: CalendarInput) {

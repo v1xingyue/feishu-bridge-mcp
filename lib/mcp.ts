@@ -1,4 +1,4 @@
-import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, getArticle, listCalendarEvents, listCalendars, listDocuments, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
+import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, ensureTeamCalendar, getArticle, listCalendarEvents, listCalendars, listDocuments, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
 
 type RpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 
@@ -11,6 +11,11 @@ export const tools = [
   {
     name: "list_calendars",
     description: "列出当前连接可访问的日历",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "ensure_team_calendar",
+    description: "确保存在可供成员订阅的公开共享团队日历；存在则直接返回，否则创建后返回",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -73,6 +78,7 @@ export async function handleRpc(request: RpcRequest) {
     let data: unknown;
     if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
     else if (name === "list_calendars") data = await listCalendars();
+    else if (name === "ensure_team_calendar") data = await ensureTeamCalendar();
     else if (name === "list_calendar_events") {
       if (typeof args.calendar_id !== "string" || !args.calendar_id) throw new Error("calendar_id 不能为空");
       data = await listCalendarEvents(args.calendar_id, stringArg(args.start_time), stringArg(args.end_time));

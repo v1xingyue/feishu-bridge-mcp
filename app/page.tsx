@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 
 type DocumentItem = { token: string; name: string; type: string; url?: string; modified_time?: string };
-type CalendarItem = { calendar_id: string; summary: string; description?: string; permissions?: "private" | "show_only_free_busy" | "public"; role?: string };
+type CalendarItem = { calendar_id: string; summary: string; description?: string; permissions?: "private" | "show_only_free_busy" | "public"; role?: string; type?: string };
 type EventItem = {
   event_id: string;
   summary: string;
@@ -23,8 +23,8 @@ const TOOL_GROUPS = [
     title: "日历",
     tone: "blue",
     summary: "共享日历的创建、修改和删除",
-    actions: ["列表", "创建", "修改", "删除"],
-    tools: ["list_calendars", "create_calendar", "update_calendar", "delete_calendar"],
+    actions: ["列表", "确保团队日历", "创建", "修改", "删除"],
+    tools: ["list_calendars", "ensure_team_calendar", "create_calendar", "update_calendar", "delete_calendar"],
   },
   {
     title: "日程",
@@ -224,7 +224,7 @@ export default function Home() {
           <ContentHeader title="日程" description="查看并管理应用可访问的飞书日程" action={<div className="header-actions"><button className="quiet-button" onClick={loadEvents}>刷新</button><button className="primary-button" onClick={() => setEditingEvent("new")} disabled={!activeCalendar}>新建日程</button></div>}>
             <div className="calendar-layout">
               <div className="calendar-list"><div className="calendar-list-head"><div className="section-label">我的日历</div><button onClick={() => setCalendarDraft({ summary: "", description: "", permissions: "private" })}>＋</button></div>{calendarDraft && <CalendarEditor draft={calendarDraft} onChange={setCalendarDraft} onCancel={() => setCalendarDraft(null)} onSave={saveCalendar} />}{calendars.map((calendar) => <div className="calendar-row" key={calendar.calendar_id}><button className={activeCalendar === calendar.calendar_id ? "calendar-choice selected" : "calendar-choice"} onClick={() => setActiveCalendar(calendar.calendar_id)}><span className="calendar-color" /> <span>{calendar.summary || "未命名日历"}</span></button><div><button onClick={() => setCalendarDraft({ id: calendar.calendar_id, summary: calendar.summary, description: calendar.description || "", permissions: calendar.permissions || "private" })}>编辑</button><button onClick={() => removeCalendar(calendar)}>删</button></div></div>)}</div>
-              <div className="events-panel"><div className="events-heading"><div><div className="eyebrow">CALENDAR</div><h2>{currentCalendar?.summary || "选择日历"}</h2></div><span>{events.length} 个日程</span></div>{currentCalendar && <div className="calendar-subscribe"><div><strong>订阅此日历</strong><p>在飞书日历左侧点击「＋」→「订阅日历」，搜索此日历名称。私密日历需先共享给订阅人。</p><code>{currentCalendar.calendar_id}</code></div><button type="button" onClick={async () => { await navigator.clipboard.writeText(currentCalendar.summary); setCopiedCalendar(currentCalendar.calendar_id); }}>{copiedCalendar === currentCalendar.calendar_id ? "已复制名称" : "复制日历名称"}</button></div>}{editingEvent && <EventEditor event={editingEvent === "new" ? undefined : editingEvent} onCancel={() => setEditingEvent(null)} onSave={saveEvent} />}<State loading={loading} error={error} empty={!events.length} emptyText="这个日历中暂无可见日程。"><div className="event-list">{events.map((event) => <EventRow key={event.event_id} event={event} onEdit={() => setEditingEvent(event)} onDelete={() => removeEvent(event)} />)}</div></State></div>
+              <div className="events-panel"><div className="events-heading"><div><div className="eyebrow">CALENDAR</div><h2>{currentCalendar?.summary || "选择日历"}</h2></div><span>{events.length} 个日程</span></div>{currentCalendar && <div className="calendar-subscribe"><div><strong>订阅此日历</strong><p>{currentCalendar.type === "primary" ? "这是机器人主日历，飞书不允许其他用户订阅。请新建一个共享日历用于订阅。" : currentCalendar.permissions === "private" ? "当前为私密日历，不能被订阅。请先将权限改为「公开」或「仅忙闲」。" : "在飞书日历左侧点击「＋」→「订阅日历」，搜索此日历名称。"}</p><small>日历 ID（仅供 API 使用）</small><code>{currentCalendar.calendar_id}</code></div>{currentCalendar.type === "primary" ? <button type="button" onClick={() => setCalendarDraft({ summary: "", description: "", permissions: "public" })}>新建共享日历</button> : currentCalendar.permissions === "private" ? <button type="button" onClick={() => setCalendarDraft({ id: currentCalendar.calendar_id, summary: currentCalendar.summary, description: currentCalendar.description || "", permissions: "private" })}>修改权限</button> : <button type="button" onClick={async () => { await navigator.clipboard.writeText(currentCalendar.summary); setCopiedCalendar(currentCalendar.calendar_id); }}>{copiedCalendar === currentCalendar.calendar_id ? "已复制名称" : "复制日历名称"}</button>}</div>}{editingEvent && <EventEditor event={editingEvent === "new" ? undefined : editingEvent} onCancel={() => setEditingEvent(null)} onSave={saveEvent} />}<State loading={loading} error={error} empty={!events.length} emptyText="这个日历中暂无可见日程。"><div className="event-list">{events.map((event) => <EventRow key={event.event_id} event={event} onEdit={() => setEditingEvent(event)} onDelete={() => removeEvent(event)} />)}</div></State></div>
             </div>
           </ContentHeader>
         ) : (

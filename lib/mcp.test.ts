@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { authorized, isAdminOpenId, isAllowedOpenId, mcpTokenTtl, signMcpToken, verifyMcpToken } from "./auth.ts";
 import { handleRpc } from "./mcp.ts";
-import { articleTextBlock, createEventBody, feishuErrorMessage, visibleEvents } from "./feishu.ts";
+import { articleTextBlock, createEventBody, feishuErrorMessage, findTeamCalendar, visibleEvents } from "./feishu.ts";
 
 test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
   assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const tools = (listed as { result: { tools: { name: string }[] } }).result.tools;
-  assert.equal(tools.length, 13);
+  assert.equal(tools.length, 14);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
+  assert.ok(tools.some(({ name }) => name === "ensure_team_calendar"));
   assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
@@ -81,6 +82,15 @@ test("cancelled events are hidden from calendar lists", () => {
     { event_id: "active", summary: "active", status: "confirmed" },
     { event_id: "cancelled", summary: "cancelled", status: "cancelled" },
   ]), [{ event_id: "active", summary: "active", status: "confirmed" }]);
+});
+
+test("team calendar must be shared and subscribable", () => {
+  const team = { calendar_id: "team", summary: "团队日历", type: "shared", permissions: "public" };
+  assert.equal(findTeamCalendar([
+    { ...team, calendar_id: "primary", type: "primary" },
+    { ...team, calendar_id: "private", permissions: "private" },
+    team,
+  ]), team);
 });
 
 test("article body becomes one plain-text docx block", () => {
