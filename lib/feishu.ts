@@ -156,7 +156,11 @@ export async function listCalendarEvents(calendarId: string, startTime?: string,
   const data = await feishu<{ items?: EventItem[]; has_more?: boolean; page_token?: string }>(
     `/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query}`,
   );
-  return { items: data.items || [], hasMore: !!data.has_more, pageToken: data.page_token };
+  return { items: visibleEvents(data.items || []), hasMore: !!data.has_more, pageToken: data.page_token };
+}
+
+export function visibleEvents(items: EventItem[]) {
+  return items.filter((event) => event.status !== "cancelled");
 }
 
 export async function createCalendarEvent(calendarId: string, input: EventInput) {

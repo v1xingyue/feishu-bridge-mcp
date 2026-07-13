@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { authorized, isAdminOpenId, isAllowedOpenId, mcpTokenTtl, signMcpToken, verifyMcpToken } from "./auth.ts";
 import { handleRpc } from "./mcp.ts";
-import { articleTextBlock, createEventBody, feishuErrorMessage } from "./feishu.ts";
+import { articleTextBlock, createEventBody, feishuErrorMessage, visibleEvents } from "./feishu.ts";
 
 test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
@@ -74,6 +74,13 @@ test("created events default to now +1h through now +3h", () => {
   const body = createEventBody({ summary: "默认时间" }, 1000);
   assert.deepEqual(body.start_time, { timestamp: "4600", timezone: "Asia/Shanghai" });
   assert.deepEqual(body.end_time, { timestamp: "11800", timezone: "Asia/Shanghai" });
+});
+
+test("cancelled events are hidden from calendar lists", () => {
+  assert.deepEqual(visibleEvents([
+    { event_id: "active", summary: "active", status: "confirmed" },
+    { event_id: "cancelled", summary: "cancelled", status: "cancelled" },
+  ]), [{ event_id: "active", summary: "active", status: "confirmed" }]);
 });
 
 test("article body becomes one plain-text docx block", () => {
