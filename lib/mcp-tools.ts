@@ -37,7 +37,7 @@ export const tools: ToolDefinition[] = [
   },
   { name: "list_calendars", description: "列出当前连接可访问的日历。", inputSchema: { type: "object", properties: {} } },
   { name: "get_team_calendar", description: "查看团队共享日历及订阅方法；日历不存在时自动创建一个公开共享日历。", inputSchema: { type: "object", properties: {} } },
-  { name: "get_current_time_and_team_calendar", description: "返回当前 Unix 秒时间戳和团队共享日历信息；日历不存在时自动创建。", inputSchema: { type: "object", properties: {} } },
+  { name: "get_current_time_and_team_calendar", description: "返回当前 Unix 秒时间戳、系统版本号、最近提交哈希、部署时间和团队共享日历信息；日历不存在时自动创建。", inputSchema: { type: "object", properties: {} } },
   {
     name: "list_calendar_events",
     description: "列出指定日历中的可见日程；未指定日历时使用团队共享日历。",

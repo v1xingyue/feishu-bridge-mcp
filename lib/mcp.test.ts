@@ -20,10 +20,12 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
 
-test("current time tool returns a Unix timestamp and the team calendar", async () => {
+test("current time tool returns time, deployment and team calendar details", async () => {
   const originalFetch = globalThis.fetch;
   process.env.FEISHU_APP_ID = "cli_test";
   process.env.FEISHU_APP_SECRET = "secret";
+  process.env.VERCEL_GIT_COMMIT_SHA = "abc123";
+  process.env.DEPLOYED_AT = "2026-07-14T08:00:00.000Z";
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith("/auth/v3/tenant_access_token/internal")) return Response.json({ code: 0, tenant_access_token: "token", expire: 3600 });
@@ -36,11 +38,16 @@ test("current time tool returns a Unix timestamp and the team calendar", async (
     const text = (response as { result: { content: { text: string }[] } }).result.content[0].text;
     const data = JSON.parse(text);
     assert.ok(data.timestamp >= before && data.timestamp <= Math.floor(Date.now() / 1000));
+    assert.equal(data.system_version, "0.1.0");
+    assert.equal(data.commit_hash, "abc123");
+    assert.equal(data.deployed_at, "2026-07-14T08:00:00.000Z");
     assert.equal(data.team_calendar.calendar.calendar_id, "team");
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.FEISHU_APP_ID;
     delete process.env.FEISHU_APP_SECRET;
+    delete process.env.VERCEL_GIT_COMMIT_SHA;
+    delete process.env.DEPLOYED_AT;
   }
 });
 

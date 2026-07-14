@@ -1,6 +1,7 @@
 import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, ensureTeamCalendar, getArticle, listCalendarEvents, listCalendars, listDocuments, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
 import { tools } from "./mcp-tools.ts";
 import { addTextWatermark } from "./watermark.ts";
+import packageJson from "../package.json" with { type: "json" };
 
 type RpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: Record<string, unknown> };
 
@@ -13,7 +14,7 @@ export async function handleRpc(request: RpcRequest) {
     return ok(request.id, {
       protocolVersion: "2025-03-26",
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "workspace-data", version: "0.1.0" },
+      serverInfo: { name: "workspace-data", version: packageJson.version },
     });
   }
   if (request.method === "notifications/initialized") return null;
@@ -32,7 +33,7 @@ export async function handleRpc(request: RpcRequest) {
     }
     else if (name === "list_calendars") data = await listCalendars();
     else if (name === "get_team_calendar") data = await ensureTeamCalendar();
-    else if (name === "get_current_time_and_team_calendar") data = { timestamp: Math.floor(Date.now() / 1000), team_calendar: await ensureTeamCalendar() };
+    else if (name === "get_current_time_and_team_calendar") data = { timestamp: Math.floor(Date.now() / 1000), system_version: packageJson.version, commit_hash: process.env.VERCEL_GIT_COMMIT_SHA || null, deployed_at: process.env.DEPLOYED_AT || null, team_calendar: await ensureTeamCalendar() };
     else if (name === "list_calendar_events") {
       data = await listCalendarEvents(await calendarId(args), stringArg(args.start_time), stringArg(args.end_time));
     } else if (name === "create_calendar_event") data = await createCalendarEvent(await calendarId(args), eventArgs(args, false));
