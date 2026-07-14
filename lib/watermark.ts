@@ -5,7 +5,16 @@ import { join } from "node:path";
 
 const positions = ["northwest", "northeast", "center", "southwest", "southeast"] as const;
 type Position = typeof positions[number];
-const watermarkFont = readFile(join(process.cwd(), "public/fonts/NotoSansSC-CN.ttf")).then((data) => fontkit.create(data) as fontkit.Font);
+
+let cachedFont: fontkit.Font | null = null;
+
+async function getWatermarkFont() {
+  if (cachedFont) return cachedFont;
+  const fontPath = new URL("../public/fonts/NotoSansSC-CN.ttf", import.meta.url);
+  const data = await readFile(fontPath);
+  cachedFont = fontkit.create(data) as fontkit.Font;
+  return cachedFont;
+}
 
 export async function addTextWatermark(input: {
   image_base64: string;
@@ -30,7 +39,7 @@ export async function addTextWatermark(input: {
   const fontSize = input.font_size ?? Math.min(160, Math.max(16, Math.round(shortEdge * 0.075)));
   if (!Number.isInteger(fontSize) || fontSize < 8 || fontSize > 500) throw new Error("font_size 必须是 8 到 500 的整数");
   const padding = Math.max(fontSize * 1.6, shortEdge * 0.05);
-  const font = await watermarkFont;
+  const font = await getWatermarkFont();
   const run = font.layout(input.text);
   if (run.glyphs.some((glyph) => glyph.id === 0)) throw new Error("水印包含当前字体不支持的字符");
   let advance = 0;

@@ -60,6 +60,8 @@ export function Workspace({ view }: { view: View }) {
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
   const [activeCalendar, setActiveCalendar] = useState("");
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [visibleMonth, setVisibleMonth] = useState(() => monthStart(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()));
   const [editingEvent, setEditingEvent] = useState<EventItem | "new" | null>(null);
   const [calendarDraft, setCalendarDraft] = useState<CalendarDraft | null>(null);
   const [articleDraft, setArticleDraft] = useState<ArticleDraft | null>(null);
@@ -75,10 +77,16 @@ export function Workspace({ view }: { view: View }) {
   const [tokenDays, setTokenDays] = useState(30);
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState("");
+  const [watermarkDebugEnabled, setWatermarkDebugEnabled] = useState(false);
+  const [watermarkDebugLoading, setWatermarkDebugLoading] = useState(false);
+  const [watermarkDebugError, setWatermarkDebugError] = useState("");
 
   useEffect(() => {
     setCallbackUrl(`${window.location.origin}/api/auth/callback/feishu`);
     fetch("/api/status").then((r) => r.json()).then((s) => setConfigured(s.feishuConfigured)).catch(() => setConfigured(false));
+    fetch("/api/watermark-debug?status=true").then((r) => r.json()).then((data) => {
+      if (typeof data.enabled === "boolean") setWatermarkDebugEnabled(data.enabled);
+    }).catch(() => {});
   }, []);
 
   const api = useCallback(async (url: string, init?: RequestInit) => {
@@ -110,10 +118,19 @@ export function Workspace({ view }: { view: View }) {
   const loadEvents = useCallback(async () => {
     if (!activeCalendar) { setEvents([]); return; }
     setLoading(true); setError("");
-    try { setEvents((await api(`/api/content?type=events&calendarId=${encodeURIComponent(activeCalendar)}`)).items); }
+    const { start, end } = calendarRange(visibleMonth);
+    try {
+      const query = new URLSearchParams({
+        type: "events",
+        calendarId: activeCalendar,
+        startTime: String(Math.floor(start.getTime() / 1000)),
+        endTime: String(Math.floor(end.getTime() / 1000)),
+      });
+      setEvents((await api(`/api/content?${query}`)).items);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "读取失败"); }
     finally { setLoading(false); }
-  }, [activeCalendar, api]);
+  }, [activeCalendar, visibleMonth, api]);
 
   useEffect(() => { if (view === "documents") loadDocuments(); }, [view, loadDocuments]);
   useEffect(() => { if (view === "calendar") loadCalendars(); }, [view, loadCalendars]);
@@ -131,6 +148,15 @@ export function Workspace({ view }: { view: View }) {
       setMcpToken(result.token); setTokenExpiresAt(result.expiresAt);
     } catch (cause) { setTokenError(cause instanceof Error ? cause.message : "Token 生成失败"); }
     finally { setTokenLoading(false); }
+  }
+
+  async function toggleWatermarkDebug(enabled: boolean) {
+    setWatermarkDebugLoading(true); setWatermarkDebugError("");
+    try {
+      const result = await api("/api/watermark-debug", { method: "POST", body: JSON.stringify({ enabled }) });
+      setWatermarkDebugEnabled(result.enabled);
+    } catch (cause) { setWatermarkDebugError(cause instanceof Error ? cause.message : "操作失败"); }
+    finally { setWatermarkDebugLoading(false); }
   }
 
   async function saveEvent(input: { summary: string; description: string; start_time: string; end_time: string }) {
@@ -235,13 +261,14 @@ export function Workspace({ view }: { view: View }) {
           <ContentHeader title="日程" description="查看并管理应用可访问的飞书日程" action={<div className="header-actions"><button className="quiet-button" onClick={loadEvents}>刷新</button><button className="primary-button" onClick={() => setEditingEvent("new")} disabled={!activeCalendar}>新建日程</button></div>}>
             <div className="calendar-layout">
               <div className="calendar-list"><div className="calendar-list-head"><div className="section-label">我的日历</div><button onClick={() => setCalendarDraft({ summary: "", description: "", permissions: "private" })}>＋</button></div>{calendarDraft && <CalendarEditor draft={calendarDraft} onChange={setCalendarDraft} onCancel={() => setCalendarDraft(null)} onSave={saveCalendar} />}{calendars.map((calendar) => <div className="calendar-row" key={calendar.calendar_id}><button className={activeCalendar === calendar.calendar_id ? "calendar-choice selected" : "calendar-choice"} onClick={() => setActiveCalendar(calendar.calendar_id)}><span className="calendar-color" /> <span>{calendar.summary || "未命名日历"}</span></button><div><button onClick={() => setCalendarDraft({ id: calendar.calendar_id, summary: calendar.summary, description: calendar.description || "", permissions: calendar.permissions || "private" })}>编辑</button><button onClick={() => removeCalendar(calendar)}>删</button></div></div>)}</div>
-              <div className="events-panel"><div className="events-heading"><div><div className="eyebrow">CALENDAR</div><h2>{currentCalendar?.summary || "选择日历"}</h2></div><span>{events.length} 个日程</span></div>{currentCalendar && (currentCalendar.type === "primary" ? <div className="calendar-subscribe"><div><strong>无法订阅</strong><p>这是机器人主日历。飞书不允许其他用户订阅机器人主日历。</p></div></div> : <div className="calendar-subscribe"><div><strong>订阅此日历</strong><p>{currentCalendar.permissions === "private" ? "当前为私密日历，不能被订阅。请先将权限改为「公开」或「仅忙闲」。" : "在飞书日历左侧点击「＋」→「订阅日历」，搜索此日历名称。"}</p><small>日历 ID（仅供 API 使用）</small><code>{currentCalendar.calendar_id}</code></div>{currentCalendar.permissions === "private" ? <button type="button" onClick={() => setCalendarDraft({ id: currentCalendar.calendar_id, summary: currentCalendar.summary, description: currentCalendar.description || "", permissions: "private" })}>修改权限</button> : <button type="button" onClick={async () => { await navigator.clipboard.writeText(currentCalendar.summary); setCopiedCalendar(currentCalendar.calendar_id); }}>{copiedCalendar === currentCalendar.calendar_id ? "已复制名称" : "复制日历名称"}</button>}</div>)}{editingEvent && <EventEditor event={editingEvent === "new" ? undefined : editingEvent} onCancel={() => setEditingEvent(null)} onSave={saveEvent} />}<State loading={loading} error={error} empty={!events.length} emptyText="这个日历中暂无可见日程。"><div className="event-list">{events.map((event) => <EventRow key={event.event_id} event={event} onEdit={() => setEditingEvent(event)} onDelete={() => removeEvent(event)} />)}</div></State></div>
+              <div className="events-panel"><div className="events-heading"><div><div className="eyebrow">CALENDAR</div><h2>{currentCalendar?.summary || "选择日历"}</h2></div><span>{events.length} 个日程</span></div>{currentCalendar && (currentCalendar.type === "primary" ? <div className="calendar-subscribe"><div><strong>无法订阅</strong><p>这是机器人主日历。飞书不允许其他用户订阅机器人主日历。</p></div></div> : <div className="calendar-subscribe"><div><strong>订阅此日历</strong><p>{currentCalendar.permissions === "private" ? "当前为私密日历，不能被订阅。请先将权限改为「公开」或「仅忙闲」。" : "在飞书日历左侧点击「＋」→「订阅日历」，搜索此日历名称。"}</p><small>日历 ID（仅供 API 使用）</small><code>{currentCalendar.calendar_id}</code></div>{currentCalendar.permissions === "private" ? <button type="button" onClick={() => setCalendarDraft({ id: currentCalendar.calendar_id, summary: currentCalendar.summary, description: currentCalendar.description || "", permissions: "private" })}>修改权限</button> : <button type="button" onClick={async () => { await navigator.clipboard.writeText(currentCalendar.summary); setCopiedCalendar(currentCalendar.calendar_id); }}>{copiedCalendar === currentCalendar.calendar_id ? "已复制名称" : "复制日历名称"}</button>}</div>)}{editingEvent && <EventEditor event={editingEvent === "new" ? undefined : editingEvent} initialDate={parseDateKey(selectedDate)} onCancel={() => setEditingEvent(null)} onSave={saveEvent} />}<State loading={loading} error={error} empty={!activeCalendar} emptyText="请先选择一个日历。"><MonthCalendar month={visibleMonth} selectedDate={selectedDate} events={events} onMonthChange={(month) => { setVisibleMonth(month); setSelectedDate(dateKey(isSameMonth(month, new Date()) ? new Date() : month)); }} onSelectDate={setSelectedDate} onCreate={() => setEditingEvent("new")} onEdit={(event) => setEditingEvent(event)} onDelete={removeEvent} /></State></div>
             </div>
           </ContentHeader>
         ) : (
           <ContentHeader title="MCP 接入" description="将工作空间文档和日程连接到支持 MCP 的 AI 客户端">
             <div className="connect-grid">
               <section className="connect-card generator-card"><div className="step">READY</div><h2>生成 MCP JWT Token</h2><p>登录验证仍由 NextAuth 负责；MCP JWT 单独使用 <code>MCP_JWT_SECRET</code> 签发。Token 只显示在当前页面。</p><label className="duration-field"><span>Token 有效期</span><select value={tokenDays} onChange={(e) => { setTokenDays(Number(e.target.value)); setMcpToken(""); setTokenExpiresAt(""); }}><option value={30}>30 天 · 短期使用</option><option value={180}>180 天 · 常规使用</option><option value={360}>360 天 · 长期使用</option></select></label><label className="token-field">MCP JWT Token<div><input type="password" readOnly value={mcpToken} placeholder="点击右侧按钮生成" /><button type="button" onClick={generateMcpToken} disabled={tokenLoading}>{tokenLoading ? "生成中…" : mcpToken ? "重新生成" : "生成 JWT"}</button></div></label>{tokenExpiresAt && <div className="token-expiry">有效期至 {new Date(tokenExpiresAt).toLocaleString("zh-CN")}</div>}{tokenError && <div className="form-error" role="alert">{tokenError}</div>}<GeneratedBlock title="JWT Token" value={token} copied={mcpCopied === "token"} onCopy={async () => { await navigator.clipboard.writeText(token); setMcpCopied("token"); }} /><GeneratedBlock title="通用 MCP JSON" value={mcpConfig} copied={mcpCopied === "config"} onCopy={async () => { await navigator.clipboard.writeText(mcpConfig); setMcpCopied("config"); }} /><GeneratedBlock title="OpenClaw JSON（openclaw.json）" value={openClawConfig} copied={mcpCopied === "openclaw"} onCopy={async () => { await navigator.clipboard.writeText(openClawConfig); setMcpCopied("openclaw"); }} /><GeneratedBlock title="发给任意 Agent 的文字说明" value={agentText} copied={mcpCopied === "agent"} onCopy={async () => { await navigator.clipboard.writeText(agentText); setMcpCopied("agent"); }} /></section>
+              <section className="connect-card"><div className="step">DEBUG</div><h2>水印调试接口</h2><p>开启后，可以直接通过浏览器访问以下接口预览中文字体和水印效果：</p><div style={{ margin: "12px 0", wordBreak: "break-all" }}><code>{`${window.location.origin}/api/watermark-debug`}</code></div><div className="toggle-field" style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "16px" }}><label style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", gap: "8px" }}><input type="checkbox" checked={watermarkDebugEnabled} disabled={watermarkDebugLoading} onChange={(e) => toggleWatermarkDebug(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer" }} /><span>{watermarkDebugEnabled ? "已开启" : "已关闭"}</span></label>{watermarkDebugLoading && <span className="spinner-mini" style={{ border: "2px solid #ccc", borderTop: "2px solid #3b82f6", borderRadius: "50%", width: "14px", height: "14px", animation: "spin 1s linear infinite" }} />}</div>{watermarkDebugError && <div className="form-error" style={{ marginTop: "12px", color: "#ef4444" }} role="alert">{watermarkDebugError}</div>}</section>
               <section className="connect-card"><div className="step">01</div><h2>部署环境变量</h2><p>登录和 MCP JWT 使用两个互不影响的密钥。</p><Code>{`FEISHU_APP_ID=cli_xxx\nFEISHU_APP_SECRET=xxx\nAUTH_SECRET=NextAuth随机长字符串\nMCP_JWT_SECRET=MCP随机长字符串\nFEISHU_ALLOWED_OPEN_IDS=ou_reader\nFEISHU_ADMIN_OPEN_IDS=ou_admin`}</Code></section>
               <section className="connect-card"><div className="step">02</div><h2>添加 MCP Server</h2><p>Endpoint 使用当前域名，认证方式为 Bearer JWT。</p><Code>{`URL  https://你的域名/api/mcp\nAuthorization  Bearer <JWT_TOKEN>`}</Code></section>
               <section className="connect-card tools-card"><div className="tools-head"><div><div className="step">03</div><h2>可用工具</h2><p>点击工具名称查看功能描述、必填参数和取值限制。</p></div><strong>{MCP_TOOLS.length} tools</strong></div><div className="tool-groups">{TOOL_GROUPS.map((group) => <ToolGroup key={group.title} group={group} />)}</div></section>
@@ -291,8 +318,43 @@ function EventRow({ event, onEdit, onDelete }: { event: EventItem; onEdit: () =>
   return <div className="event-row"><div className="event-date"><strong>{start ? String(start.getDate()).padStart(2, "0") : "--"}</strong><span>{start ? start.toLocaleDateString("zh-CN", { month: "short" }) : "全天"}</span></div><div className="event-copy"><h3>{event.summary || "未命名日程"}</h3><p>{start ? start.toLocaleString("zh-CN", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : event.start_time?.date || "时间待定"}{event.description ? ` · ${event.description}` : ""}</p></div><div className="event-actions">{event.app_link && <a href={event.app_link} target="_blank" rel="noreferrer">打开</a>}<button onClick={onEdit}>编辑</button><button className="danger-action" onClick={onDelete}>删除</button></div></div>;
 }
 
-function EventEditor({ event, onCancel, onSave }: { event?: EventItem; onCancel: () => void; onSave: (input: { summary: string; description: string; start_time: string; end_time: string }) => Promise<void> }) {
-  const initialStart = event?.start_time?.timestamp ? new Date(Number(event.start_time.timestamp) * 1000) : new Date(Date.now() + 3600000);
+function MonthCalendar({ month, selectedDate, events, onMonthChange, onSelectDate, onCreate, onEdit, onDelete }: { month: Date; selectedDate: string; events: EventItem[]; onMonthChange: (month: Date) => void; onSelectDate: (date: string) => void; onCreate: () => void; onEdit: (event: EventItem) => void; onDelete: (event: EventItem) => void }) {
+  const { start } = calendarRange(month);
+  const days = Array.from({ length: 42 }, (_, index) => addDays(start, index));
+  const grouped = new Map<string, EventItem[]>();
+  for (const event of events) {
+    const key = eventDateKey(event);
+    if (key) grouped.set(key, [...(grouped.get(key) || []), event]);
+  }
+  for (const items of grouped.values()) items.sort((a, b) => eventTime(a) - eventTime(b));
+  const selectedEvents = grouped.get(selectedDate) || [];
+  const today = dateKey(new Date());
+
+  return <div className="month-view">
+    <div className="month-toolbar">
+      <div><strong>{month.toLocaleDateString("zh-CN", { year: "numeric", month: "long" })}</strong><span>按日期查看日程安排</span></div>
+      <div className="month-navigation"><button type="button" onClick={() => onMonthChange(addMonths(month, -1))} aria-label="上个月">‹</button><button type="button" className="today-button" onClick={() => onMonthChange(monthStart(new Date()))}>今天</button><button type="button" onClick={() => onMonthChange(addMonths(month, 1))} aria-label="下个月">›</button></div>
+    </div>
+    <div className="month-grid" role="grid" aria-label={`${month.getFullYear()} 年 ${month.getMonth() + 1} 月日历`}>
+      {["一", "二", "三", "四", "五", "六", "日"].map((weekday) => <div className="weekday" role="columnheader" key={weekday}>周{weekday}</div>)}
+      {days.map((day) => {
+        const key = dateKey(day); const items = grouped.get(key) || []; const selected = key === selectedDate;
+        return <div role="gridcell" aria-selected={selected} className={`day-cell${isSameMonth(day, month) ? "" : " outside-month"}${key === today ? " today" : ""}${selected ? " selected-day" : ""}`} key={key} onClick={() => onSelectDate(key)}>
+          <button type="button" className="day-number" onClick={() => onSelectDate(key)} aria-label={`选择 ${day.toLocaleDateString("zh-CN")}`}>{day.getDate()}</button>
+          <div className="day-events">{items.slice(0, 3).map((event) => <button type="button" className="event-chip" key={event.event_id} onClick={(click) => { click.stopPropagation(); onSelectDate(key); }} title={event.summary || "未命名日程"}><span>{formatEventTime(event)}</span>{event.summary || "未命名日程"}</button>)}{items.length > 3 && <button type="button" className="more-events" onClick={(click) => { click.stopPropagation(); onSelectDate(key); }}>另有 {items.length - 3} 项</button>}</div>
+        </div>;
+      })}
+    </div>
+    <section className="selected-day-agenda" aria-live="polite">
+      <div className="agenda-heading"><div><span>{parseDateKey(selectedDate).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</span><strong>{selectedEvents.length ? `${selectedEvents.length} 个日程` : "当天暂无日程"}</strong></div><button type="button" className="primary-button" onClick={onCreate}>在当天新建</button></div>
+      {selectedEvents.length > 0 && <div className="event-list">{selectedEvents.map((event) => <EventRow key={event.event_id} event={event} onEdit={() => onEdit(event)} onDelete={() => onDelete(event)} />)}</div>}
+    </section>
+  </div>;
+}
+
+function EventEditor({ event, initialDate, onCancel, onSave }: { event?: EventItem; initialDate?: Date; onCancel: () => void; onSave: (input: { summary: string; description: string; start_time: string; end_time: string }) => Promise<void> }) {
+  const defaultStart = initialDate ? new Date(initialDate.getFullYear(), initialDate.getMonth(), initialDate.getDate(), 9) : new Date(Date.now() + 3600000);
+  const initialStart = event?.start_time?.timestamp ? new Date(Number(event.start_time.timestamp) * 1000) : defaultStart;
   const initialEnd = event?.end_time?.timestamp ? new Date(Number(event.end_time.timestamp) * 1000) : new Date(initialStart.getTime() + 7200000);
   const [summary, setSummary] = useState(event?.summary || "");
   const [description, setDescription] = useState(event?.description || "");
@@ -329,3 +391,13 @@ function propertyRules(property: ToolDefinition["inputSchema"]["properties"][str
 function fileLabel(type: string) { return ({ doc: "D", docx: "D", sheet: "S", bitable: "B", mindnote: "M", file: "F", folder: "▢" } as Record<string, string>)[type] || "F"; }
 function formatTime(value: string) { const date = new Date(Number(value) * 1000); return Number.isNaN(date.valueOf()) ? value : date.toLocaleDateString("zh-CN"); }
 function localDateTime(date: Date) { return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
+function monthStart(date: Date) { return new Date(date.getFullYear(), date.getMonth(), 1); }
+function addMonths(date: Date, amount: number) { return new Date(date.getFullYear(), date.getMonth() + amount, 1); }
+function addDays(date: Date, amount: number) { const result = new Date(date); result.setDate(result.getDate() + amount); return result; }
+function isSameMonth(left: Date, right: Date) { return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth(); }
+function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
+function parseDateKey(value: string) { const [year, month, day] = value.split("-").map(Number); return new Date(year, month - 1, day); }
+function calendarRange(month: Date) { const first = monthStart(month); const start = addDays(first, -((first.getDay() + 6) % 7)); return { start, end: addDays(start, 42) }; }
+function eventTime(event: EventItem) { return event.start_time?.timestamp ? Number(event.start_time.timestamp) : parseDateKey(event.start_time?.date || "1970-01-01").getTime() / 1000; }
+function eventDateKey(event: EventItem) { if (event.start_time?.timestamp) return dateKey(new Date(Number(event.start_time.timestamp) * 1000)); return event.start_time?.date || ""; }
+function formatEventTime(event: EventItem) { if (!event.start_time?.timestamp) return "全天"; return new Date(Number(event.start_time.timestamp) * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }); }

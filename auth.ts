@@ -1,4 +1,4 @@
-import { oauthProfile } from "@/lib/feishu";
+import { oauthProfile } from "./lib/feishu.ts";
 import type { NextAuthOptions } from "next-auth";
 import type { OAuthConfig } from "next-auth/providers/oauth";
 

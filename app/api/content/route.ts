@@ -13,7 +13,11 @@ export async function GET(request: Request) {
     const type = query.get("type");
     if (type === "documents") return Response.json(await listDocuments());
     if (type === "calendars") return Response.json(await listCalendars());
-    if (type === "events") return Response.json(await listCalendarEvents(query.get("calendarId") || ""));
+    if (type === "events") return Response.json(await listCalendarEvents(
+      query.get("calendarId") || "",
+      query.get("startTime") || undefined,
+      query.get("endTime") || undefined,
+    ));
     if (type === "article") return Response.json(await getArticle(query.get("documentId") || ""));
     return Response.json({ error: "未知内容类型" }, { status: 400 });
   } catch (cause) {
