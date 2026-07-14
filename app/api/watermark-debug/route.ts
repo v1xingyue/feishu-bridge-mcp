@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 // GET: Returns a sample watermarked image if debug mode is enabled
 export async function GET(request: Request) {
-  const isEnabled = await isWatermarkDebugEnabled();
+  const isEnabled = process.env.WATERMARK_ENABLED === "1" && await isWatermarkDebugEnabled();
   
   const { searchParams } = new URL(request.url);
   if (searchParams.has("status")) {
@@ -62,6 +62,7 @@ export async function GET(request: Request) {
 
 // POST: Toggles the debug mode (Admin only)
 export async function POST(request: Request) {
+  if (process.env.WATERMARK_ENABLED !== "1") return Response.json({ error: "图片水印功能暂未启用" }, { status: 404 });
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return Response.json({ error: "请先登录飞书" }, { status: 401 });

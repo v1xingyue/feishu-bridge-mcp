@@ -1,4 +1,5 @@
 import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, ensureTeamCalendar, getArticle, listCalendarEvents, listCalendars, listDocuments, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
+import { soleAdminOpenId } from "./auth.ts";
 import { tools } from "./mcp-tools.ts";
 import { addTextWatermark } from "./watermark.ts";
 import packageJson from "../package.json" with { type: "json" };
@@ -19,7 +20,7 @@ export async function handleRpc(request: RpcRequest) {
   }
   if (request.method === "notifications/initialized") return null;
   if (request.method === "ping") return ok(request.id, {});
-  if (request.method === "tools/list") return ok(request.id, { tools });
+  if (request.method === "tools/list") return ok(request.id, { tools: watermarkEnabled() ? tools : tools.filter(({ name }) => name !== "add_image_watermark") });
   if (request.method !== "tools/call") return error(request.id, -32601, "Method not found");
 
   const name = request.params?.name;
@@ -28,6 +29,7 @@ export async function handleRpc(request: RpcRequest) {
     let data: unknown;
     if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
     else if (name === "add_image_watermark") {
+      if (!watermarkEnabled()) throw new Error("图片水印功能暂未启用");
       const image = await addTextWatermark({ image_base64: requiredArg(args, "image_base64"), text: requiredArg(args, "text"), position: stringArg(args.position), font_size: numberArg(args.font_size) });
       return ok(request.id, { content: [{ type: "image", data: image.data, mimeType: image.mimeType }, { type: "text", text: `${image.width}x${image.height} · fontSize=${image.fontSize} · ${image.renderer}${image.debug ? ` · ${image.debug}` : ""}` }] });
     }
@@ -54,6 +56,10 @@ export async function handleRpc(request: RpcRequest) {
       isError: true,
     });
   }
+}
+
+function watermarkEnabled() {
+  return process.env.WATERMARK_ENABLED === "1";
 }
 
 function stringArg(value: unknown) {
@@ -89,5 +95,6 @@ function calendarArgs(args: Record<string, unknown>) {
 }
 
 function articleArgs(args: Record<string, unknown>) {
-  return { title: requiredArg(args, "title"), content: stringArg(args.content), folder_token: stringArg(args.folder_token) };
+  if (args.public_share !== undefined && typeof args.public_share !== "boolean") throw new Error("public_share 必须是布尔值");
+  return { title: requiredArg(args, "title"), content: stringArg(args.content), folder_token: stringArg(args.folder_token), public_share: args.public_share ?? true, full_access_open_id: soleAdminOpenId() };
 }

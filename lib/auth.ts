@@ -40,6 +40,7 @@ export function authorized(request: Request) {
 
 export function isAdminOpenId(openId?: string) { return Boolean(openId && ids("FEISHU_ADMIN_OPEN_IDS").has(openId)); }
 export function isAllowedOpenId(openId?: string) { return Boolean(openId && (isAdminOpenId(openId) || ids("FEISHU_ALLOWED_OPEN_IDS").has(openId))); }
+export function soleAdminOpenId() { const [openId, another] = ids("FEISHU_ADMIN_OPEN_IDS"); return another ? undefined : openId; }
 export function sessionOpenId(session: unknown) { return (session as { user?: { openId?: string } } | null)?.user?.openId; }
 
 function ids(name: string) { return new Set((process.env[name] || "").split(/[,\s]+/).filter(Boolean)); }

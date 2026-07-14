@@ -68,6 +68,7 @@ export function Workspace({ view }: { view: View }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [copiedCalendar, setCopiedCalendar] = useState("");
@@ -83,7 +84,7 @@ export function Workspace({ view }: { view: View }) {
 
   useEffect(() => {
     setCallbackUrl(`${window.location.origin}/api/auth/callback/feishu`);
-    fetch("/api/status").then((r) => r.json()).then((s) => setConfigured(s.feishuConfigured)).catch(() => setConfigured(false));
+    fetch("/api/status").then((r) => r.json()).then((s) => { setConfigured(s.feishuConfigured); setWatermarkEnabled(s.watermarkEnabled === true); }).catch(() => setConfigured(false));
     fetch("/api/watermark-debug?status=true").then((r) => r.json()).then((data) => {
       if (typeof data.enabled === "boolean") setWatermarkDebugEnabled(data.enabled);
     }).catch(() => {});
@@ -217,7 +218,9 @@ export function Workspace({ view }: { view: View }) {
   const token = mcpToken || "<JWT_TOKEN>";
   const mcpConfig = JSON.stringify({ mcpServers: { workspace_data: { url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
   const openClawConfig = JSON.stringify({ mcp: { servers: { workspace_data: { url: mcpUrl, transport: "streamable-http", headers: { Authorization: `Bearer ${token}` } } } } }, null, 2);
-  const agentText = `请连接并使用以下远程 MCP Server：\n\n名称：Workspace Data\n传输协议：Streamable HTTP\nURL：${mcpUrl}\n请求头：Authorization: Bearer ${token}\n\n它提供图片文字水印、工作空间文档、日历和日程管理工具。请按照你当前 Agent 客户端支持的远程 MCP 配置方式添加，并在连接后调用 tools/list 验证。此 JWT 有效期为 ${tokenDays} 天，过期后需重新生成。`;
+  const agentText = `请连接并使用以下远程 MCP Server：\n\n名称：Workspace Data\n传输协议：Streamable HTTP\nURL：${mcpUrl}\n请求头：Authorization: Bearer ${token}\n\n它提供工作空间文档、日历和日程管理工具。请按照你当前 Agent 客户端支持的远程 MCP 配置方式添加，并在连接后调用 tools/list 验证。此 JWT 有效期为 ${tokenDays} 天，过期后需重新生成。`;
+  const availableGroups = watermarkEnabled ? TOOL_GROUPS : TOOL_GROUPS.filter((group) => group.title !== "图片");
+  const availableToolCount = MCP_TOOLS.length - (watermarkEnabled ? 0 : 1);
 
   return (
     <main className="shell">
@@ -226,7 +229,7 @@ export function Workspace({ view }: { view: View }) {
         <nav aria-label="主要导航">
           <a href="/documents" className={view === "documents" ? "nav-item active" : "nav-item"}><span className="nav-glyph doc-glyph" />文章与文档</a>
           <a href="/calendar" className={view === "calendar" ? "nav-item active" : "nav-item"}><span className="nav-glyph cal-glyph" />日程</a>
-          <a href="/watermark" className={view === "watermark" ? "nav-item active" : "nav-item"}><span className="nav-glyph image-glyph" />图片水印</a>
+          {watermarkEnabled && <a href="/watermark" className={view === "watermark" ? "nav-item active" : "nav-item"}><span className="nav-glyph image-glyph" />图片水印</a>}
           <a href="/connect" className={view === "connect" ? "nav-item active" : "nav-item"}><span className="nav-glyph plug-glyph" />MCP 接入</a>
         </nav>
         <div className="sidebar-bottom">
@@ -266,17 +269,15 @@ export function Workspace({ view }: { view: View }) {
             </div>
           </ContentHeader>
         ) : view === "watermark" ? (
-          <ContentHeader title="图片水印" description="上传图片，通过 MCP 后端添加文字水印">
-            <WatermarkEditor />
-          </ContentHeader>
+          watermarkEnabled ? <ContentHeader title="图片水印" description="上传图片，通过 MCP 后端添加文字水印"><WatermarkEditor /></ContentHeader> : <ContentHeader title="图片水印暂不可用" description="此功能当前已关闭。" ><div className="state">需要时设置 WATERMARK_ENABLED=1 后重新部署。</div></ContentHeader>
         ) : (
           <ContentHeader title="MCP 接入" description="将工作空间文档和日程连接到支持 MCP 的 AI 客户端">
             <div className="connect-grid">
               <section className="connect-card generator-card"><div className="step">READY</div><h2>生成 MCP JWT Token</h2><p>登录验证仍由 NextAuth 负责；MCP JWT 单独使用 <code>MCP_JWT_SECRET</code> 签发。Token 只显示在当前页面。</p><label className="duration-field"><span>Token 有效期</span><select value={tokenDays} onChange={(e) => { setTokenDays(Number(e.target.value)); setMcpToken(""); setTokenExpiresAt(""); }}><option value={30}>30 天 · 短期使用</option><option value={180}>180 天 · 常规使用</option><option value={360}>360 天 · 长期使用</option></select></label><label className="token-field">MCP JWT Token<div><input type="password" readOnly value={mcpToken} placeholder="点击右侧按钮生成" /><button type="button" onClick={generateMcpToken} disabled={tokenLoading}>{tokenLoading ? "生成中…" : mcpToken ? "重新生成" : "生成 JWT"}</button></div></label>{tokenExpiresAt && <div className="token-expiry">有效期至 {new Date(tokenExpiresAt).toLocaleString("zh-CN")}</div>}{tokenError && <div className="form-error" role="alert">{tokenError}</div>}<GeneratedBlock title="JWT Token" value={token} copied={mcpCopied === "token"} onCopy={async () => { await navigator.clipboard.writeText(token); setMcpCopied("token"); }} /><GeneratedBlock title="通用 MCP JSON" value={mcpConfig} copied={mcpCopied === "config"} onCopy={async () => { await navigator.clipboard.writeText(mcpConfig); setMcpCopied("config"); }} /><GeneratedBlock title="OpenClaw JSON（openclaw.json）" value={openClawConfig} copied={mcpCopied === "openclaw"} onCopy={async () => { await navigator.clipboard.writeText(openClawConfig); setMcpCopied("openclaw"); }} /><GeneratedBlock title="发给任意 Agent 的文字说明" value={agentText} copied={mcpCopied === "agent"} onCopy={async () => { await navigator.clipboard.writeText(agentText); setMcpCopied("agent"); }} /></section>
-              <section className="connect-card"><div className="step">DEBUG</div><h2>水印调试接口</h2><p>开启后，可以直接通过浏览器访问以下接口预览中文字体和水印效果：</p><div style={{ margin: "12px 0", wordBreak: "break-all" }}><code>{`${window.location.origin}/api/watermark-debug`}</code></div><div className="toggle-field" style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "16px" }}><label style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", gap: "8px" }}><input type="checkbox" checked={watermarkDebugEnabled} disabled={watermarkDebugLoading} onChange={(e) => toggleWatermarkDebug(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer" }} /><span>{watermarkDebugEnabled ? "已开启" : "已关闭"}</span></label>{watermarkDebugLoading && <span className="spinner-mini" style={{ border: "2px solid #ccc", borderTop: "2px solid #3b82f6", borderRadius: "50%", width: "14px", height: "14px", animation: "spin 1s linear infinite" }} />}</div>{watermarkDebugError && <div className="form-error" style={{ marginTop: "12px", color: "#ef4444" }} role="alert">{watermarkDebugError}</div>}</section>
+              {watermarkEnabled && <section className="connect-card"><div className="step">DEBUG</div><h2>水印调试接口</h2><p>开启后，可以直接通过浏览器访问以下接口预览中文字体和水印效果：</p><div style={{ margin: "12px 0", wordBreak: "break-all" }}><code>{`${window.location.origin}/api/watermark-debug`}</code></div><div className="toggle-field" style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "16px" }}><label style={{ display: "inline-flex", alignItems: "center", cursor: "pointer", gap: "8px" }}><input type="checkbox" checked={watermarkDebugEnabled} disabled={watermarkDebugLoading} onChange={(e) => toggleWatermarkDebug(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer" }} /><span>{watermarkDebugEnabled ? "已开启" : "已关闭"}</span></label>{watermarkDebugLoading && <span className="spinner-mini" style={{ border: "2px solid #ccc", borderTop: "2px solid #3b82f6", borderRadius: "50%", width: "14px", height: "14px", animation: "spin 1s linear infinite" }} />}</div>{watermarkDebugError && <div className="form-error" style={{ marginTop: "12px", color: "#ef4444" }} role="alert">{watermarkDebugError}</div>}</section>}
               <section className="connect-card"><div className="step">01</div><h2>部署环境变量</h2><p>登录和 MCP JWT 使用两个互不影响的密钥。</p><Code>{`FEISHU_APP_ID=cli_xxx\nFEISHU_APP_SECRET=xxx\nAUTH_SECRET=NextAuth随机长字符串\nMCP_JWT_SECRET=MCP随机长字符串\nFEISHU_ALLOWED_OPEN_IDS=ou_reader\nFEISHU_ADMIN_OPEN_IDS=ou_admin`}</Code></section>
               <section className="connect-card"><div className="step">02</div><h2>添加 MCP Server</h2><p>Endpoint 使用当前域名，认证方式为 Bearer JWT。</p><Code>{`URL  https://你的域名/api/mcp\nAuthorization  Bearer <JWT_TOKEN>`}</Code></section>
-              <section className="connect-card tools-card"><div className="tools-head"><div><div className="step">03</div><h2>可用工具</h2><p>点击工具名称查看功能描述、必填参数和取值限制。</p></div><strong>{MCP_TOOLS.length} tools</strong></div><div className="tool-groups">{TOOL_GROUPS.map((group) => <ToolGroup key={group.title} group={group} />)}</div></section>
+              <section className="connect-card tools-card"><div className="tools-head"><div><div className="step">03</div><h2>可用工具</h2><p>点击工具名称查看功能描述、必填参数和取值限制。</p></div><strong>{availableToolCount} tools</strong></div><div className="tool-groups">{availableGroups.map((group) => <ToolGroup key={group.title} group={group} />)}</div></section>
             </div>
           </ContentHeader>
         )}

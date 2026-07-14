@@ -59,7 +59,7 @@ export const tools: ToolDefinition[] = [
   { name: "create_calendar", description: "创建一个共享日历。", inputSchema: calendarSchema(false) },
   { name: "update_calendar", description: "修改指定共享日历的名称、描述和权限。", inputSchema: calendarSchema(true) },
   { name: "delete_calendar", description: "删除指定共享日历。", inputSchema: { type: "object", required: ["calendar_id"], properties: { calendar_id: { type: "string", description: "要删除的日历 ID。" } } } },
-  { name: "create_article", description: "创建一篇纯文本文档文章。", inputSchema: articleSchema(false) },
+  { name: "create_article", description: "创建一篇纯文本文档文章，默认开启互联网公开只读分享。", inputSchema: articleSchema(false) },
   { name: "get_article", description: "读取指定文章的标题和纯文本正文。", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string", description: "要读取的文档 ID。" } } } },
   { name: "update_article", description: "修改指定文章的标题和纯文本正文。", inputSchema: articleSchema(true) },
   { name: "delete_article", description: "删除指定文章。", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string", description: "要删除的文档 ID。" } } } },
@@ -86,5 +86,5 @@ function calendarSchema(editing: boolean): ToolDefinition["inputSchema"] {
 }
 
 function articleSchema(editing: boolean): ToolDefinition["inputSchema"] {
-  return { type: "object", required: editing ? ["document_id", "title"] : ["title"], properties: { ...(editing ? { document_id: { type: "string", description: "要修改的文档 ID。" } } : {}), title: { type: "string", description: "文章标题。" }, content: { type: "string", description: "纯文本正文，可选。" }, folder_token: { type: "string", description: "目标文件夹 token，可选。" } } };
+  return { type: "object", required: editing ? ["document_id", "title"] : ["title"], properties: { ...(editing ? { document_id: { type: "string", description: "要修改的文档 ID。" } } : { public_share: { type: "boolean", default: true, description: "是否开启互联网公开只读分享，默认开启。" } }), title: { type: "string", description: "文章标题。" }, content: { type: "string", description: "纯文本正文，可选。" }, folder_token: { type: "string", description: "目标文件夹 token，可选。" } } };
 }

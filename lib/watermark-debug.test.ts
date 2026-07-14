@@ -21,6 +21,7 @@ test("Watermark debug route GET returns status correctly", async () => {
   const data1 = await res1.json();
   assert.equal(data1.enabled, false);
 
+  process.env.WATERMARK_ENABLED = "1";
   await setWatermarkDebugEnabled(true);
   const res2 = await GET(new Request("http://localhost/api/watermark-debug?status=true"));
   assert.equal(res2.status, 200);
@@ -29,6 +30,7 @@ test("Watermark debug route GET returns status correctly", async () => {
   
   // Clean up
   await setWatermarkDebugEnabled(false);
+  delete process.env.WATERMARK_ENABLED;
 });
 
 test("Watermark debug route POST checks session authentication", async (t) => {

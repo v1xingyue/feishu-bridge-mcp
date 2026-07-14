@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (process.env.WATERMARK_ENABLED !== "1") return Response.json({ error: "图片水印功能暂未启用" }, { status: 404 });
   const session = await getServerSession(authOptions);
   if (!session?.user) return Response.json({ error: "请先登录飞书" }, { status: 401 });
   if (!isAllowedOpenId(sessionOpenId(session))) return Response.json({ error: "当前飞书账号没有操作权限" }, { status: 403 });

@@ -64,7 +64,7 @@ export type CalendarItem = {
 };
 
 export type CalendarInput = { summary: string; description?: string; permissions?: "private" | "show_only_free_busy" | "public" };
-export type ArticleInput = { title: string; content?: string; folder_token?: string };
+export type ArticleInput = { title: string; content?: string; folder_token?: string; public_share?: boolean; full_access_open_id?: string };
 
 export type EventItem = {
   event_id: string;
@@ -138,6 +138,8 @@ export async function createArticle(input: ArticleInput) {
   const data = await feishu<{ document?: { document_id?: string; title?: string } }>("/docx/v1/documents", { method: "POST", body: JSON.stringify({ title: required(input.title?.trim(), "title"), folder_token: input.folder_token || undefined }) });
   const documentId = required(data.document?.document_id, "document_id");
   if (input.content?.trim()) await createArticleText(documentId, input.content);
+  if (input.full_access_open_id) await feishu(`/drive/v1/permissions/${pathPart(documentId, "document_id")}/members?type=docx&need_notification=false`, { method: "POST", body: JSON.stringify({ member_type: "openid", member_id: input.full_access_open_id, perm: "full_access" }) });
+  if (input.public_share) await feishu(`/drive/v2/permissions/${pathPart(documentId, "document_id")}/public?type=docx`, { method: "PATCH", body: JSON.stringify({ external_access: true, link_share_entity: "anyone_readable" }) });
   return { document: data.document, content: input.content || "" };
 }
 

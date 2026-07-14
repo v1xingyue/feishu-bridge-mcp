@@ -1,27 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
-import { authorized, isAdminOpenId, isAllowedOpenId, mcpTokenTtl, signMcpToken, verifyMcpToken } from "./auth.ts";
+import { authorized, isAdminOpenId, isAllowedOpenId, mcpTokenTtl, signMcpToken, soleAdminOpenId, verifyMcpToken } from "./auth.ts";
 import { handleRpc } from "./mcp.ts";
 import { articleTextBlock, createEventBody, feishuErrorMessage, findTeamCalendar, visibleEvents } from "./feishu.ts";
+
+async function withWatermark<T>(action: () => Promise<T>) {
+  process.env.WATERMARK_ENABLED = "1";
+  try { return await action(); }
+  finally { delete process.env.WATERMARK_ENABLED; }
+}
 
 test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
   assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string; default?: unknown; enum?: readonly string[]; maxLength?: number }> } }[] } }).result.tools;
-  assert.equal(tools.length, 16);
+  assert.equal(tools.length, 15);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
   assert.ok(tools.some(({ name }) => name === "get_team_calendar"));
   assert.ok(tools.some(({ name }) => name === "get_current_time_and_team_calendar"));
   assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
   assert.ok(tools.every((tool) => tool.description && Object.values(tool.inputSchema.properties).every((property) => property.description)));
+  assert.ok(!tools.some(({ name }) => name === "add_image_watermark"));
+  assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
+});
+
+test("watermark tool is exposed only when the feature is enabled", async () => withWatermark(async () => {
+  const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+  const tools = (listed as { result: { tools: { name: string; inputSchema: { properties: Record<string, { default?: unknown; enum?: readonly string[]; maxLength?: number }> } }[] } }).result.tools;
   const watermark = tools.find(({ name }) => name === "add_image_watermark");
+  assert.equal(tools.length, 16);
   assert.equal(watermark?.inputSchema.properties.position.default, "bottom-right");
   assert.deepEqual(watermark?.inputSchema.properties.position.enum, ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"]);
   assert.equal(watermark?.inputSchema.properties.text.maxLength, 40);
-  assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
-});
+}));
 
 test("current time tool returns time, deployment and team calendar details", async () => {
   const originalFetch = globalThis.fetch;
@@ -54,7 +67,13 @@ test("current time tool returns time, deployment and team calendar details", asy
   }
 });
 
-test("image watermark tool returns an MCP image with Chinese text", async () => {
+test("image watermark calls are rejected while the feature is disabled", async () => {
+  const response = await handleRpc({ jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "add_image_watermark", arguments: {} } });
+  assert.equal((response as { result: { isError: boolean } }).result.isError, true);
+  assert.match(JSON.stringify(response), /暂未启用/);
+});
+
+test("image watermark tool returns an MCP image with Chinese text when enabled", async () => withWatermark(async () => {
   const source = await sharp({ create: { width: 100, height: 80, channels: 3, background: "blue" } }).png().toBuffer();
   const response = await handleRpc({ jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "中文水印" } } });
   const content = (response as { result: { content: { type: string; data?: string; mimeType?: string }[] } }).result.content;
@@ -62,9 +81,9 @@ test("image watermark tool returns an MCP image with Chinese text", async () => 
   assert.equal(content[0].mimeType, "image/webp");
   assert.notDeepEqual(Buffer.from(content[0].data!, "base64"), source);
   assert.match(JSON.stringify(content), /fontSize=16 · sharp-pango-v1/);
-});
+}));
 
-test("watermark debug details are opt-in", async () => {
+test("watermark debug details are opt-in", async () => withWatermark(async () => {
   process.env.WATERMARK_DEBUG = "1";
   try {
     const source = await sharp({ create: { width: 100, height: 80, channels: 3, background: "blue" } }).png().toBuffer();
@@ -73,9 +92,9 @@ test("watermark debug details are opt-in", async () => {
   } finally {
     delete process.env.WATERMARK_DEBUG;
   }
-});
+}));
 
-test("watermark validates the reference API limits", async () => {
+test("watermark validates the reference API limits", async () => withWatermark(async () => {
   const source = await sharp({ create: { width: 320, height: 200, channels: 3, background: "blue" } }).png().toBuffer();
   const baseArguments = { image_base64: source.toString("base64"), text: "水印" };
 
@@ -86,9 +105,9 @@ test("watermark validates the reference API limits", async () => {
   const longText = await handleRpc({ jsonrpc: "2.0", id: 26, method: "tools/call", params: { name: "add_image_watermark", arguments: { ...baseArguments, text: "水".repeat(41) } } });
   assert.equal((longText as { result: { isError: boolean } }).result.isError, true);
   assert.match(JSON.stringify(longText), /不能超过 40 个字符/);
-});
+}));
 
-test("watermark normalizes EXIF orientation and accepts markup characters as text", async () => {
+test("watermark normalizes EXIF orientation and accepts markup characters as text", async () => withWatermark(async () => {
   const source = await sharp({ create: { width: 120, height: 80, channels: 3, background: "blue" } })
     .jpeg()
     .withMetadata({ orientation: 6 })
@@ -98,7 +117,7 @@ test("watermark normalizes EXIF orientation and accepts markup characters as tex
   assert.equal(content[0].mimeType, "image/webp");
   assert.match(content[1].text || "", /^80x120 ·/);
   assert.deepEqual(await sharp(Buffer.from(content[0].data!, "base64")).metadata().then(({ width, height, format }) => ({ width, height, format })), { width: 80, height: 120, format: "webp" });
-});
+}));
 
 test("calendar tools expose today's Shanghai date for relative-time requests", async () => {
   const listed = await handleRpc({ jsonrpc: "2.0", id: 20, method: "tools/list" });
@@ -139,6 +158,9 @@ test("open_id lists separate readers and admins", () => {
   assert.equal(isAllowedOpenId("ou_admin"), true);
   assert.equal(isAdminOpenId("ou_reader"), false);
   assert.equal(isAllowedOpenId("ou_unknown"), false);
+  assert.equal(soleAdminOpenId(), "ou_admin");
+  process.env.FEISHU_ADMIN_OPEN_IDS = "ou_admin ou_admin2";
+  assert.equal(soleAdminOpenId(), undefined);
   delete process.env.FEISHU_ALLOWED_OPEN_IDS;
   delete process.env.FEISHU_ADMIN_OPEN_IDS;
 });
@@ -187,6 +209,36 @@ test("calendar event tools default to the team calendar", async () => {
 
 test("article body becomes one plain-text docx block", () => {
   assert.deepEqual(articleTextBlock("正文"), { block_type: 2, text: { elements: [{ text_run: { content: "正文" } }] } });
+});
+
+test("create_article defaults to public read-only sharing", async () => {
+  const originalFetch = globalThis.fetch;
+  let publicShareRequest: { url: string; init?: RequestInit } | undefined;
+  let fullAccessRequest: { url: string; init?: RequestInit } | undefined;
+  process.env.FEISHU_APP_ID = "cli_test";
+  process.env.FEISHU_APP_SECRET = "secret";
+  process.env.FEISHU_ADMIN_OPEN_IDS = "ou_admin";
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v3/tenant_access_token/internal")) return Response.json({ code: 0, tenant_access_token: "token", expire: 3600 });
+    if (url.endsWith("/docx/v1/documents")) return Response.json({ code: 0, data: { document: { document_id: "doc_1", title: "公开文章" } } });
+    if (url.includes("/drive/v1/permissions/doc_1/members?type=docx")) { fullAccessRequest = { url, init }; return Response.json({ code: 0, data: {} }); }
+    if (url.includes("/drive/v2/permissions/doc_1/public?type=docx")) { publicShareRequest = { url, init }; return Response.json({ code: 0, data: {} }); }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await handleRpc({ jsonrpc: "2.0", id: 30, method: "tools/call", params: { name: "create_article", arguments: { title: "公开文章" } } });
+    assert.equal((response as { result: { isError?: boolean } }).result.isError, undefined);
+    assert.equal(fullAccessRequest?.init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(fullAccessRequest?.init?.body)), { member_type: "openid", member_id: "ou_admin", perm: "full_access" });
+    assert.equal(publicShareRequest?.init?.method, "PATCH");
+    assert.deepEqual(JSON.parse(String(publicShareRequest?.init?.body)), { external_access: true, link_share_entity: "anyone_readable" });
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.FEISHU_APP_ID;
+    delete process.env.FEISHU_APP_SECRET;
+    delete process.env.FEISHU_ADMIN_OPEN_IDS;
+  }
 });
 
 test("Feishu permission errors list scopes and an application link", () => {
