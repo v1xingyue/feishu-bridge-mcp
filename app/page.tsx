@@ -18,6 +18,7 @@ type EventItem = {
 type View = "documents" | "calendar" | "watermark" | "connect";
 type CalendarDraft = { id?: string; summary: string; description: string; permissions: "private" | "show_only_free_busy" | "public" };
 type ArticleDraft = { id?: string; title: string; content: string };
+type ConfigStatus = { appIdConfigured: boolean; appSecretConfigured: boolean; feishuConfigured: boolean; authConfigured: boolean; mcpJwtConfigured: boolean; allowedUsersConfigured: boolean; adminUsersConfigured: boolean; mcpEnabled: boolean; watermarkEnabled: boolean };
 
 const TOOL_GROUPS = [
   {
@@ -45,8 +46,8 @@ const TOOL_GROUPS = [
     title: "文章",
     tone: "purple",
     summary: "文档文章的 CRUD",
-    actions: ["列表", "创建", "读取", "编辑", "删除"],
-    tools: ["list_documents", "create_article", "get_article", "update_article", "delete_article"],
+    actions: ["列表", "创建", "读取", "编辑", "设置 full_access 用户", "删除"],
+    tools: ["list_documents", "create_article", "get_article", "update_article", "set_article_full_access_user", "delete_article"],
   },
 ] as const;
 
@@ -69,6 +70,7 @@ export function Workspace({ view }: { view: View }) {
   const [error, setError] = useState("");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
+  const [projectStatus, setProjectStatus] = useState<ConfigStatus | null>();
   const [callbackUrl, setCallbackUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [copiedCalendar, setCopiedCalendar] = useState("");
@@ -84,7 +86,7 @@ export function Workspace({ view }: { view: View }) {
 
   useEffect(() => {
     setCallbackUrl(`${window.location.origin}/api/auth/callback/feishu`);
-    fetch("/api/status").then((r) => r.json()).then((s) => { setConfigured(s.feishuConfigured); setWatermarkEnabled(s.watermarkEnabled === true); }).catch(() => setConfigured(false));
+    fetch("/api/status").then((r) => r.json()).then((s) => { setProjectStatus(s); setConfigured(s.feishuConfigured); setWatermarkEnabled(s.watermarkEnabled === true); }).catch(() => { setProjectStatus(null); setConfigured(false); });
     fetch("/api/watermark-debug?status=true").then((r) => r.json()).then((data) => {
       if (typeof data.enabled === "boolean") setWatermarkDebugEnabled(data.enabled);
     }).catch(() => {});
@@ -252,9 +254,11 @@ export function Workspace({ view }: { view: View }) {
             <div className="redirect-hint"><span>请在飞书应用的「安全设置 → 重定向 URL」中添加</span><div><code>{callbackUrl || "正在生成…"}</code><button type="button" onClick={async () => { await navigator.clipboard.writeText(callbackUrl); setCopied(true); }} disabled={!callbackUrl}>{copied ? "已复制" : "复制"}</button></div></div>
             <button className="oauth-button" onClick={() => signIn("feishu")} disabled={status === "loading"}><span className="brand-mark">F</span>使用飞书账号登录</button>
             {!configured && configured !== null && <div className="config-warning">服务端尚未配置飞书应用凭据。</div>}
+            <ProjectGuide status={projectStatus} />
           </section>
         ) : view === "documents" ? (
           <ContentHeader title="文章与文档" description="飞书云空间根目录中的最新内容" action={<div className="header-actions"><button className="quiet-button" onClick={loadDocuments}>刷新</button><button className="primary-button" onClick={() => editArticle()}>新建文章</button></div>}>
+            <ProjectGuide status={projectStatus} />
             {articleDraft && <ArticleEditor draft={articleDraft} onChange={setArticleDraft} onCancel={() => setArticleDraft(null)} onSave={saveArticle} />}
             <div className="summary-row"><Stat value={documents.length} label="当前内容" /><Stat value={documents.filter((x) => x.type === "docx" || x.type === "doc").length} label="文档" /><Stat value={documents.filter((x) => x.type === "sheet").length} label="表格" /></div>
             <State loading={loading} error={error} empty={!documents.length} emptyText="这里还没有可访问的内容。请确认应用已获得云空间权限。">
@@ -351,6 +355,26 @@ function fileBase64(file: File) {
 
 function ContentHeader({ title, description, action, children }: { title: string; description: string; action?: React.ReactNode; children: React.ReactNode }) {
   return <div className="content"><div className="page-heading"><div><div className="eyebrow">FEISHU WORKSPACE</div><h1>{title}</h1><p>{description}</p></div>{action}</div>{children}</div>;
+}
+
+function ProjectGuide({ status }: { status: ConfigStatus | null | undefined }) {
+  const state = (enabled: boolean | undefined, optional = false) => status === undefined ? "检测中" : status === null ? "无法检测" : enabled ? "已启用" : optional ? "未启用（可选）" : "未启用";
+  const features = [
+    ["飞书工作区", "文档、文章、日历与日程", status?.feishuConfigured],
+    ["网页登录", "飞书 OAuth 与安全会话", status ? status.feishuConfigured && status.authConfigured : undefined],
+    ["MCP 接入", "远程工具与 JWT 认证", status?.mcpEnabled],
+    ["图片水印", "Base64 图片文字水印", status?.watermarkEnabled],
+  ] as const;
+  const env = [
+    ["FEISHU_APP_ID / FEISHU_APP_KEY", "飞书应用标识", status?.appIdConfigured, false],
+    ["FEISHU_APP_SECRET", "飞书应用密钥", status?.appSecretConfigured, false],
+    ["AUTH_SECRET", "加密网页登录会话；修改后旧会话失效", status?.authConfigured, false],
+    ["MCP_JWT_SECRET", "签发 MCP JWT；修改后旧 Token 失效", status?.mcpJwtConfigured, false],
+    ["FEISHU_ALLOWED_OPEN_IDS", "允许读取的飞书用户 open_id 列表", status?.allowedUsersConfigured, true],
+    ["FEISHU_ADMIN_OPEN_IDS", "管理员 open_id 列表；唯一管理员会获得新文章 full_access", status?.adminUsersConfigured, false],
+    ["WATERMARK_ENABLED=1", "启用图片水印页面和 MCP 工具", status?.watermarkEnabled, true],
+  ] as const;
+  return <section className="project-guide" aria-labelledby="project-guide-title"><div className="project-guide-head"><div><div className="eyebrow">PROJECT SETUP</div><h2 id="project-guide-title">项目配置与功能状态</h2><p>Feishu Bridge 将飞书文档、文章、日历和日程接入网页与 MCP。环境变量仅在服务端读取；这里仅显示配置状态，不显示任何值。</p></div></div><div className="feature-status-grid">{features.map(([name, description, enabled]) => <div className={`feature-status ${enabled ? "enabled" : "disabled"}`} key={name}><span className="feature-status-dot" aria-hidden="true" /><div><strong>{name}</strong><p>{description}</p></div><b>{state(enabled, name === "图片水印")}</b></div>)}</div><div className="env-list">{env.map(([name, description, enabled, optional]) => <div className="env-row" key={name}><div><code>{name}</code><p>{description}</p></div><span className={enabled ? "configured" : "unconfigured"}>{status === undefined ? "检测中" : status === null ? "无法检测" : enabled ? "已配置" : optional ? "未配置（可选）" : "未配置"}</span></div>)}</div></section>;
 }
 
 function Stat({ value, label }: { value: number; label: string }) { return <div className="stat"><strong>{String(value).padStart(2, "0")}</strong><span>{label}</span></div>; }

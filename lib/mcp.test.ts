@@ -3,7 +3,7 @@ import test from "node:test";
 import sharp from "sharp";
 import { authorized, isAdminOpenId, isAllowedOpenId, mcpTokenTtl, signMcpToken, soleAdminOpenId, verifyMcpToken } from "./auth.ts";
 import { handleRpc } from "./mcp.ts";
-import { articleTextBlock, createEventBody, feishuErrorMessage, findTeamCalendar, visibleEvents } from "./feishu.ts";
+import { articleTextBlock, configStatus, createEventBody, feishuErrorMessage, findTeamCalendar, visibleEvents } from "./feishu.ts";
 
 async function withWatermark<T>(action: () => Promise<T>) {
   process.env.WATERMARK_ENABLED = "1";
@@ -16,7 +16,7 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string; default?: unknown; enum?: readonly string[]; maxLength?: number }> } }[] } }).result.tools;
-  assert.equal(tools.length, 15);
+  assert.equal(tools.length, 16);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
   assert.ok(tools.some(({ name }) => name === "get_team_calendar"));
   assert.ok(tools.some(({ name }) => name === "get_current_time_and_team_calendar"));
@@ -30,7 +30,7 @@ test("watermark tool is exposed only when the feature is enabled", async () => w
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const tools = (listed as { result: { tools: { name: string; inputSchema: { properties: Record<string, { default?: unknown; enum?: readonly string[]; maxLength?: number }> } }[] } }).result.tools;
   const watermark = tools.find(({ name }) => name === "add_image_watermark");
-  assert.equal(tools.length, 16);
+  assert.equal(tools.length, 17);
   assert.equal(watermark?.inputSchema.properties.position.default, "bottom-right");
   assert.deepEqual(watermark?.inputSchema.properties.position.enum, ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"]);
   assert.equal(watermark?.inputSchema.properties.text.maxLength, 40);
@@ -211,6 +211,28 @@ test("article body becomes one plain-text docx block", () => {
   assert.deepEqual(articleTextBlock("正文"), { block_type: 2, text: { elements: [{ text_run: { content: "正文" } }] } });
 });
 
+test("set_article_full_access_user grants full access to an existing article", async () => {
+  const originalFetch = globalThis.fetch;
+  let permissionBody: unknown;
+  process.env.FEISHU_APP_ID = "cli_test";
+  process.env.FEISHU_APP_SECRET = "secret";
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v3/tenant_access_token/internal")) return Response.json({ code: 0, tenant_access_token: "token", expire: 3600 });
+    if (url.includes("/drive/v1/permissions/doc_1/members?type=docx")) { permissionBody = JSON.parse(String(init?.body)); return Response.json({ code: 0, data: {} }); }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await handleRpc({ jsonrpc: "2.0", id: 31, method: "tools/call", params: { name: "set_article_full_access_user", arguments: { document_id: "doc_1", open_id: "ou_editor" } } });
+    assert.equal((response as { result: { isError?: boolean } }).result.isError, undefined);
+    assert.deepEqual(permissionBody, { member_type: "openid", member_id: "ou_editor", perm: "full_access" });
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.FEISHU_APP_ID;
+    delete process.env.FEISHU_APP_SECRET;
+  }
+});
+
 test("create_article defaults to public read-only sharing", async () => {
   const originalFetch = globalThis.fetch;
   let publicShareRequest: { url: string; init?: RequestInit } | undefined;
@@ -247,4 +269,22 @@ test("Feishu permission errors list scopes and an application link", () => {
   assert.match(message, /需要权限：drive:drive:readonly、docx:document/);
   assert.match(message, /https:\/\/open\.feishu\.cn\/app\/cli_test\/auth\?q=/);
   delete process.env.FEISHU_APP_ID;
+});
+
+test("config status reports features without exposing environment values", () => {
+  process.env.FEISHU_APP_ID = "cli_secret";
+  process.env.FEISHU_APP_SECRET = "app_secret";
+  process.env.MCP_JWT_SECRET = "jwt_secret";
+  process.env.FEISHU_ADMIN_OPEN_IDS = "ou_admin";
+  try {
+    const status = configStatus();
+    assert.equal(status.feishuConfigured, true);
+    assert.equal(status.mcpEnabled, true);
+    assert.doesNotMatch(JSON.stringify(status), /cli_secret|app_secret|jwt_secret|ou_admin/);
+  } finally {
+    delete process.env.FEISHU_APP_ID;
+    delete process.env.FEISHU_APP_SECRET;
+    delete process.env.MCP_JWT_SECRET;
+    delete process.env.FEISHU_ADMIN_OPEN_IDS;
+  }
 });

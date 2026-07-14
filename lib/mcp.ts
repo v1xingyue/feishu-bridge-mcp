@@ -1,4 +1,4 @@
-import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, ensureTeamCalendar, getArticle, listCalendarEvents, listCalendars, listDocuments, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
+import { createArticle, createCalendar, createCalendarEvent, deleteArticle, deleteCalendar, deleteCalendarEvent, ensureTeamCalendar, getArticle, listCalendarEvents, listCalendars, listDocuments, setArticleFullAccessUser, updateArticle, updateCalendar, updateCalendarEvent } from "./feishu.ts";
 import { soleAdminOpenId } from "./auth.ts";
 import { tools } from "./mcp-tools.ts";
 import { addTextWatermark } from "./watermark.ts";
@@ -47,6 +47,7 @@ export async function handleRpc(request: RpcRequest) {
     else if (name === "create_article") data = await createArticle(articleArgs(args));
     else if (name === "get_article") data = await getArticle(requiredArg(args, "document_id"));
     else if (name === "update_article") data = await updateArticle(requiredArg(args, "document_id"), articleArgs(args));
+    else if (name === "set_article_full_access_user") data = await setArticleFullAccessUser(requiredArg(args, "document_id"), requiredArg(args, "open_id"));
     else if (name === "delete_article") data = await deleteArticle(requiredArg(args, "document_id"));
     else return error(request.id, -32602, `未知工具: ${String(name)}`);
     return ok(request.id, { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });

@@ -138,9 +138,13 @@ export async function createArticle(input: ArticleInput) {
   const data = await feishu<{ document?: { document_id?: string; title?: string } }>("/docx/v1/documents", { method: "POST", body: JSON.stringify({ title: required(input.title?.trim(), "title"), folder_token: input.folder_token || undefined }) });
   const documentId = required(data.document?.document_id, "document_id");
   if (input.content?.trim()) await createArticleText(documentId, input.content);
-  if (input.full_access_open_id) await feishu(`/drive/v1/permissions/${pathPart(documentId, "document_id")}/members?type=docx&need_notification=false`, { method: "POST", body: JSON.stringify({ member_type: "openid", member_id: input.full_access_open_id, perm: "full_access" }) });
+  if (input.full_access_open_id) await setArticleFullAccessUser(documentId, input.full_access_open_id);
   if (input.public_share) await feishu(`/drive/v2/permissions/${pathPart(documentId, "document_id")}/public?type=docx`, { method: "PATCH", body: JSON.stringify({ external_access: true, link_share_entity: "anyone_readable" }) });
   return { document: data.document, content: input.content || "" };
+}
+
+export function setArticleFullAccessUser(documentId: string, openId: string) {
+  return feishu(`/drive/v1/permissions/${pathPart(documentId, "document_id")}/members?type=docx&need_notification=false`, { method: "POST", body: JSON.stringify({ member_type: "openid", member_id: required(openId.trim(), "open_id"), perm: "full_access" }) });
 }
 
 export async function getArticle(documentId: string) {
@@ -241,7 +245,19 @@ export function oauthProfile(profile: { open_id: string; name?: string; en_name?
 }
 
 export function configStatus() {
+  const appIdConfigured = !!(process.env.FEISHU_APP_ID || process.env.FEISHU_APP_KEY);
+  const appSecretConfigured = !!process.env.FEISHU_APP_SECRET;
+  const mcpJwtConfigured = !!process.env.MCP_JWT_SECRET;
+  const adminUsersConfigured = !!process.env.FEISHU_ADMIN_OPEN_IDS;
   return {
-    feishuConfigured: !!((process.env.FEISHU_APP_ID || process.env.FEISHU_APP_KEY) && process.env.FEISHU_APP_SECRET),
+    appIdConfigured,
+    appSecretConfigured,
+    feishuConfigured: appIdConfigured && appSecretConfigured,
+    authConfigured: !!process.env.AUTH_SECRET,
+    mcpJwtConfigured,
+    allowedUsersConfigured: !!process.env.FEISHU_ALLOWED_OPEN_IDS,
+    adminUsersConfigured,
+    mcpEnabled: appIdConfigured && appSecretConfigured && mcpJwtConfigured && adminUsersConfigured,
+    watermarkEnabled: process.env.WATERMARK_ENABLED === "1",
   };
 }

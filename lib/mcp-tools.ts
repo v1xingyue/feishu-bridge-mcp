@@ -62,6 +62,7 @@ export const tools: ToolDefinition[] = [
   { name: "create_article", description: "创建一篇纯文本文档文章，默认开启互联网公开只读分享。", inputSchema: articleSchema(false) },
   { name: "get_article", description: "读取指定文章的标题和纯文本正文。", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string", description: "要读取的文档 ID。" } } } },
   { name: "update_article", description: "修改指定文章的标题和纯文本正文。", inputSchema: articleSchema(true) },
+  { name: "set_article_full_access_user", description: "为指定文章添加一名拥有完整管理权限的用户。", inputSchema: { type: "object", required: ["document_id", "open_id"], properties: { document_id: { type: "string", description: "文章的文档 ID。" }, open_id: { type: "string", description: "获得 full_access 权限的用户 open_id（ou_xxx）。" } } } },
   { name: "delete_article", description: "删除指定文章。", inputSchema: { type: "object", required: ["document_id"], properties: { document_id: { type: "string", description: "要删除的文档 ID。" } } } },
 ];
 
