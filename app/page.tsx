@@ -15,7 +15,7 @@ type EventItem = {
   status?: string;
   app_link?: string;
 };
-type View = "documents" | "calendar" | "connect";
+type View = "documents" | "calendar" | "watermark" | "connect";
 type CalendarDraft = { id?: string; summary: string; description: string; permissions: "private" | "show_only_free_busy" | "public" };
 type ArticleDraft = { id?: string; title: string; content: string };
 
@@ -226,6 +226,7 @@ export function Workspace({ view }: { view: View }) {
         <nav aria-label="主要导航">
           <a href="/documents" className={view === "documents" ? "nav-item active" : "nav-item"}><span className="nav-glyph doc-glyph" />文章与文档</a>
           <a href="/calendar" className={view === "calendar" ? "nav-item active" : "nav-item"}><span className="nav-glyph cal-glyph" />日程</a>
+          <a href="/watermark" className={view === "watermark" ? "nav-item active" : "nav-item"}><span className="nav-glyph image-glyph" />图片水印</a>
           <a href="/connect" className={view === "connect" ? "nav-item active" : "nav-item"}><span className="nav-glyph plug-glyph" />MCP 接入</a>
         </nav>
         <div className="sidebar-bottom">
@@ -264,6 +265,10 @@ export function Workspace({ view }: { view: View }) {
               <div className="events-panel"><div className="events-heading"><div><div className="eyebrow">CALENDAR</div><h2>{currentCalendar?.summary || "选择日历"}</h2></div><span>{events.length} 个日程</span></div>{currentCalendar && (currentCalendar.type === "primary" ? <div className="calendar-subscribe"><div><strong>无法订阅</strong><p>这是机器人主日历。飞书不允许其他用户订阅机器人主日历。</p></div></div> : <div className="calendar-subscribe"><div><strong>订阅此日历</strong><p>{currentCalendar.permissions === "private" ? "当前为私密日历，不能被订阅。请先将权限改为「公开」或「仅忙闲」。" : "在飞书日历左侧点击「＋」→「订阅日历」，搜索此日历名称。"}</p><small>日历 ID（仅供 API 使用）</small><code>{currentCalendar.calendar_id}</code></div>{currentCalendar.permissions === "private" ? <button type="button" onClick={() => setCalendarDraft({ id: currentCalendar.calendar_id, summary: currentCalendar.summary, description: currentCalendar.description || "", permissions: "private" })}>修改权限</button> : <button type="button" onClick={async () => { await navigator.clipboard.writeText(currentCalendar.summary); setCopiedCalendar(currentCalendar.calendar_id); }}>{copiedCalendar === currentCalendar.calendar_id ? "已复制名称" : "复制日历名称"}</button>}</div>)}{editingEvent && <EventEditor event={editingEvent === "new" ? undefined : editingEvent} initialDate={parseDateKey(selectedDate)} onCancel={() => setEditingEvent(null)} onSave={saveEvent} />}<State loading={loading} error={error} empty={!activeCalendar} emptyText="请先选择一个日历。"><MonthCalendar month={visibleMonth} selectedDate={selectedDate} events={events} onMonthChange={(month) => { setVisibleMonth(month); setSelectedDate(dateKey(isSameMonth(month, new Date()) ? new Date() : month)); }} onSelectDate={setSelectedDate} onCreate={() => setEditingEvent("new")} onEdit={(event) => setEditingEvent(event)} onDelete={removeEvent} /></State></div>
             </div>
           </ContentHeader>
+        ) : view === "watermark" ? (
+          <ContentHeader title="图片水印" description="上传图片，通过 MCP 后端添加文字水印">
+            <WatermarkEditor />
+          </ContentHeader>
         ) : (
           <ContentHeader title="MCP 接入" description="将工作空间文档和日程连接到支持 MCP 的 AI 客户端">
             <div className="connect-grid">
@@ -278,6 +283,69 @@ export function Workspace({ view }: { view: View }) {
       </section>
     </main>
   );
+}
+
+function WatermarkEditor() {
+  const [file, setFile] = useState<File | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [text, setText] = useState("");
+  const [position, setPosition] = useState("bottom-right");
+  const [fontSize, setFontSize] = useState("");
+  const [result, setResult] = useState<{ data: string; mimeType: string; details?: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => () => { if (sourceUrl) URL.revokeObjectURL(sourceUrl); }, [sourceUrl]);
+
+  function chooseFile(next: File | null) {
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    setFile(next); setSourceUrl(next ? URL.createObjectURL(next) : ""); setResult(null); setError("");
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setError(""); setResult(null);
+    if (!file) return setError("请先选择图片");
+    if (file.size > 3 * 1024 * 1024) return setError("图片不能超过 3 MB");
+    setLoading(true);
+    try {
+      const response = await fetch("/api/watermark", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image_base64: await fileBase64(file), text, position, font_size: fontSize ? Number(fontSize) : undefined }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "水印处理失败");
+      setResult(body);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "水印处理失败"); }
+    finally { setLoading(false); }
+  }
+
+  return <div className="watermark-layout">
+    <form className="watermark-panel" onSubmit={submit}>
+      <label className="upload-field"><span>{file ? file.name : "选择 JPG、PNG 或 WebP 图片"}</span><small>最大 3 MB</small><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseFile(event.target.files?.[0] || null)} /></label>
+      <label>水印文字<input value={text} onChange={(event) => setText(event.target.value)} required maxLength={40} placeholder="例如：仅供内部使用" /></label>
+      <div className="watermark-fields">
+        <label>位置<select value={position} onChange={(event) => setPosition(event.target.value)}>{Object.entries(WATERMARK_POSITIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>字号（可选）<input type="number" min={1} value={fontSize} onChange={(event) => setFontSize(event.target.value)} placeholder="自动" /></label>
+      </div>
+      {error && <div className="form-error" role="alert">{error}</div>}
+      <button className="primary-button" disabled={loading}>{loading ? "MCP 处理中…" : "添加水印"}</button>
+    </form>
+    <section className="watermark-preview" aria-live="polite">
+      {result ? <><img src={`data:${result.mimeType};base64,${result.data}`} alt="添加水印后的图片" /><div><span>{result.details || "处理完成"}</span><a className="primary-button" href={`data:${result.mimeType};base64,${result.data}`} download={`watermarked-${file?.name.replace(/\.[^.]+$/, "") || "image"}.webp`}>下载 WebP</a></div></> : sourceUrl ? <><img src={sourceUrl} alt="待处理的原始图片预览" /><p>原图预览</p></> : <div className="watermark-empty">选择图片后在这里预览</div>}
+    </section>
+  </div>;
+}
+
+const WATERMARK_POSITIONS = { "top-left": "左上", "top-center": "上中", "top-right": "右上", "center-left": "左中", center: "居中", "center-right": "右中", "bottom-left": "左下", "bottom-center": "下中", "bottom-right": "右下" };
+
+function fileBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function ContentHeader({ title, description, action, children }: { title: string; description: string; action?: React.ReactNode; children: React.ReactNode }) {
