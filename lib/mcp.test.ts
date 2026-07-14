@@ -10,13 +10,38 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
   const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string; default?: unknown }> } }[] } }).result.tools;
-  assert.equal(tools.length, 15);
+  assert.equal(tools.length, 16);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
   assert.ok(tools.some(({ name }) => name === "get_team_calendar"));
+  assert.ok(tools.some(({ name }) => name === "get_current_time_and_team_calendar"));
   assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
   assert.ok(tools.every((tool) => tool.description && Object.values(tool.inputSchema.properties).every((property) => property.description)));
   assert.equal(tools.find(({ name }) => name === "add_image_watermark")?.inputSchema.properties.opacity.default, 0.35);
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
+});
+
+test("current time tool returns a Unix timestamp and the team calendar", async () => {
+  const originalFetch = globalThis.fetch;
+  process.env.FEISHU_APP_ID = "cli_test";
+  process.env.FEISHU_APP_SECRET = "secret";
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/auth/v3/tenant_access_token/internal")) return Response.json({ code: 0, tenant_access_token: "token", expire: 3600 });
+    if (url.includes("/calendar/v4/calendars?")) return Response.json({ code: 0, data: { calendar_list: [{ calendar_id: "team", summary: "团队共享日历", type: "shared", permissions: "public" }] } });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const before = Math.floor(Date.now() / 1000);
+    const response = await handleRpc({ jsonrpc: "2.0", id: 23, method: "tools/call", params: { name: "get_current_time_and_team_calendar", arguments: {} } });
+    const text = (response as { result: { content: { text: string }[] } }).result.content[0].text;
+    const data = JSON.parse(text);
+    assert.ok(data.timestamp >= before && data.timestamp <= Math.floor(Date.now() / 1000));
+    assert.equal(data.team_calendar.calendar.calendar_id, "team");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.FEISHU_APP_ID;
+    delete process.env.FEISHU_APP_SECRET;
+  }
 });
 
 test("image watermark tool returns an MCP image with Chinese text", async () => {
@@ -26,7 +51,18 @@ test("image watermark tool returns an MCP image with Chinese text", async () => 
   assert.equal(content[0].type, "image");
   assert.equal(content[0].mimeType, "image/png");
   assert.notDeepEqual(Buffer.from(content[0].data!, "base64"), source);
-  assert.match(JSON.stringify(content), /sharp-fontfile-v1/);
+  assert.match(JSON.stringify(content), /svg-glyph-path-v1/);
+});
+
+test("watermark debug details are opt-in", async () => {
+  process.env.WATERMARK_DEBUG = "1";
+  try {
+    const source = await sharp({ create: { width: 100, height: 80, channels: 3, background: "blue" } }).png().toBuffer();
+    const response = await handleRpc({ jsonrpc: "2.0", id: 24, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "中文" } } });
+    assert.match(JSON.stringify(response), /glyphs=2/);
+  } finally {
+    delete process.env.WATERMARK_DEBUG;
+  }
 });
 
 test("calendar tools expose today's Shanghai date for relative-time requests", async () => {

@@ -28,10 +28,11 @@ export async function handleRpc(request: RpcRequest) {
     if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
     else if (name === "add_image_watermark") {
       const image = await addTextWatermark({ image_base64: requiredArg(args, "image_base64"), text: requiredArg(args, "text"), position: stringArg(args.position), opacity: numberArg(args.opacity), font_size: numberArg(args.font_size) });
-      return ok(request.id, { content: [{ type: "image", data: image.data, mimeType: image.mimeType }, { type: "text", text: `${image.width}x${image.height} · ${image.renderer}` }] });
+      return ok(request.id, { content: [{ type: "image", data: image.data, mimeType: image.mimeType }, { type: "text", text: `${image.width}x${image.height} · ${image.renderer}${image.debug ? ` · ${image.debug}` : ""}` }] });
     }
     else if (name === "list_calendars") data = await listCalendars();
     else if (name === "get_team_calendar") data = await ensureTeamCalendar();
+    else if (name === "get_current_time_and_team_calendar") data = { timestamp: Math.floor(Date.now() / 1000), team_calendar: await ensureTeamCalendar() };
     else if (name === "list_calendar_events") {
       data = await listCalendarEvents(await calendarId(args), stringArg(args.start_time), stringArg(args.end_time));
     } else if (name === "create_calendar_event") data = await createCalendarEvent(await calendarId(args), eventArgs(args, false));

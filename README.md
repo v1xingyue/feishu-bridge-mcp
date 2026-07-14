@@ -68,4 +68,4 @@ https://你的域名/api/auth/callback/feishu
 - Transport：Streamable HTTP
 - Header：`Authorization: Bearer <JWT_TOKEN>`
 
-MCP 提供图片文字水印、文档列表、文章 CRUD、日历 CRUD 和日程 CRUD，共 15 个工具。
+MCP 提供图片文字水印、文档列表、文章 CRUD、当前时间与团队日历信息、日历 CRUD 和日程 CRUD，共 16 个工具。

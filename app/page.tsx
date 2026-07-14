@@ -31,8 +31,8 @@ const TOOL_GROUPS = [
     title: "日历",
     tone: "blue",
     summary: "共享日历的创建、修改和删除",
-    actions: ["列表", "查看团队日历", "创建", "修改", "删除"],
-    tools: ["list_calendars", "get_team_calendar", "create_calendar", "update_calendar", "delete_calendar"],
+    actions: ["列表", "当前时间与团队日历", "查看团队日历", "创建", "修改", "删除"],
+    tools: ["list_calendars", "get_current_time_and_team_calendar", "get_team_calendar", "create_calendar", "update_calendar", "delete_calendar"],
   },
   {
     title: "日程",

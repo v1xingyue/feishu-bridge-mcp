@@ -1,9 +1,11 @@
 import sharp from "sharp";
+import * as fontkit from "fontkit";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const positions = ["northwest", "northeast", "center", "southwest", "southeast"] as const;
 type Position = typeof positions[number];
-const fontFile = join(process.cwd(), "public/fonts/NotoSansSC-CN.ttf");
+const watermarkFont = readFile(join(process.cwd(), "public/fonts/NotoSansSC-CN.ttf")).then((data) => fontkit.create(data) as fontkit.Font);
 
 export async function addTextWatermark(input: {
   image_base64: string;
@@ -28,14 +30,22 @@ export async function addTextWatermark(input: {
   const fontSize = input.font_size ?? Math.min(160, Math.max(16, Math.round(shortEdge * 0.075)));
   if (!Number.isInteger(fontSize) || fontSize < 8 || fontSize > 500) throw new Error("font_size 必须是 8 到 500 的整数");
   const padding = Math.max(fontSize * 1.6, shortEdge * 0.05);
-  const watermark = await sharp({ text: { text: `<span foreground="white" alpha="${Math.round(opacity * 100)}%">${escapeMarkup(input.text)}</span>`, font: `Noto Sans SC ${fontSize}`, fontfile: fontFile, rgba: true, dpi: 72 } }).png().toBuffer({ resolveWithObject: true });
-  const left = Math.max(0, Math.round(position.endsWith("west") ? padding : position.endsWith("east") ? metadata.width - padding - watermark.info.width : (metadata.width - watermark.info.width) / 2));
-  const top = Math.max(0, Math.round(position.startsWith("north") ? padding : position.startsWith("south") ? metadata.height - padding - watermark.info.height : (metadata.height - watermark.info.height) / 2));
-  const { data, info } = await image.composite([{ input: watermark.data, left, top }]).toBuffer({ resolveWithObject: true });
+  const font = await watermarkFont;
+  const run = font.layout(input.text);
+  if (run.glyphs.some((glyph) => glyph.id === 0)) throw new Error("水印包含当前字体不支持的字符");
+  let advance = 0;
+  const paths = run.glyphs.map((glyph, index) => {
+    const glyphPosition = run.positions[index];
+    const path = `<path d="${glyph.path.toSVG()}" transform="translate(${advance + glyphPosition.xOffset} ${glyphPosition.yOffset})"/>`;
+    advance += glyphPosition.xAdvance;
+    return path;
+  }).join("");
+  const scale = fontSize / font.unitsPerEm;
+  const textWidth = advance * scale;
+  const x = position.endsWith("west") ? padding : position.endsWith("east") ? metadata.width - padding - textWidth : (metadata.width - textWidth) / 2;
+  const baseline = position.startsWith("north") ? padding + font.ascent * scale : position.startsWith("south") ? metadata.height - padding + font.descent * scale : metadata.height / 2 + (font.ascent + font.descent) * scale / 2;
+  const svg = `<svg width="${metadata.width}" height="${metadata.height}" xmlns="http://www.w3.org/2000/svg"><g transform="translate(${x} ${baseline}) scale(${scale} ${-scale})" fill="white" fill-opacity="${opacity}">${paths}</g></svg>`;
+  const { data, info } = await image.composite([{ input: Buffer.from(svg) }]).toBuffer({ resolveWithObject: true });
   if (data.length > 3 * 1024 * 1024) throw new Error("处理后的图片超过 3 MB，请先压缩原图");
-  return { data: data.toString("base64"), mimeType: `image/${info.format}`, width: info.width, height: info.height, renderer: "sharp-fontfile-v1" };
-}
-
-function escapeMarkup(value: string) {
-  return value.replace(/[<>&"']/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "\"": "&quot;", "'": "&apos;" })[character]!);
+  return { data: data.toString("base64"), mimeType: `image/${info.format}`, width: info.width, height: info.height, renderer: "svg-glyph-path-v1", debug: process.env.WATERMARK_DEBUG === "1" ? `${process.platform}/${process.arch} · glyphs=${run.glyphs.length}` : undefined };
 }
