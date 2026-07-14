@@ -28,8 +28,8 @@ export async function handleRpc(request: RpcRequest) {
     let data: unknown;
     if (name === "list_documents") data = await listDocuments(Number(args.page_size) || 50);
     else if (name === "add_image_watermark") {
-      const image = await addTextWatermark({ image_base64: requiredArg(args, "image_base64"), text: requiredArg(args, "text"), position: stringArg(args.position), opacity: numberArg(args.opacity), font_size: numberArg(args.font_size) });
-      return ok(request.id, { content: [{ type: "image", data: image.data, mimeType: image.mimeType }, { type: "text", text: `${image.width}x${image.height} · ${image.renderer}${image.debug ? ` · ${image.debug}` : ""}` }] });
+      const image = await addTextWatermark({ image_base64: requiredArg(args, "image_base64"), text: requiredArg(args, "text"), position: stringArg(args.position), font_size: numberArg(args.font_size) });
+      return ok(request.id, { content: [{ type: "image", data: image.data, mimeType: image.mimeType }, { type: "text", text: `${image.width}x${image.height} · fontSize=${image.fontSize} · ${image.renderer}${image.debug ? ` · ${image.debug}` : ""}` }] });
     }
     else if (name === "list_calendars") data = await listCalendars();
     else if (name === "get_team_calendar") data = await ensureTeamCalendar();

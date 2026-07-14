@@ -9,14 +9,17 @@ test("MCP initialize and tools/list expose the server tools", async () => {
   const initialized = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
   assert.equal((initialized as { result: { serverInfo: { name: string } } }).result.serverInfo.name, "workspace-data");
   const listed = await handleRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string; default?: unknown }> } }[] } }).result.tools;
+  const tools = (listed as { result: { tools: { name: string; description: string; inputSchema: { properties: Record<string, { description?: string; default?: unknown; enum?: readonly string[]; maxLength?: number }> } }[] } }).result.tools;
   assert.equal(tools.length, 16);
   assert.ok(tools.some(({ name }) => name === "list_documents"));
   assert.ok(tools.some(({ name }) => name === "get_team_calendar"));
   assert.ok(tools.some(({ name }) => name === "get_current_time_and_team_calendar"));
   assert.ok(tools.every(({ name }) => !name.startsWith("feishu_")));
   assert.ok(tools.every((tool) => tool.description && Object.values(tool.inputSchema.properties).every((property) => property.description)));
-  assert.equal(tools.find(({ name }) => name === "add_image_watermark")?.inputSchema.properties.opacity.default, 0.35);
+  const watermark = tools.find(({ name }) => name === "add_image_watermark");
+  assert.equal(watermark?.inputSchema.properties.position.default, "bottom-right");
+  assert.deepEqual(watermark?.inputSchema.properties.position.enum, ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"]);
+  assert.equal(watermark?.inputSchema.properties.text.maxLength, 40);
   assert.doesNotMatch(JSON.stringify({ initialized, listed }), /feishu|飞书/i);
 });
 
@@ -56,9 +59,9 @@ test("image watermark tool returns an MCP image with Chinese text", async () => 
   const response = await handleRpc({ jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "中文水印" } } });
   const content = (response as { result: { content: { type: string; data?: string; mimeType?: string }[] } }).result.content;
   assert.equal(content[0].type, "image");
-  assert.equal(content[0].mimeType, "image/png");
+  assert.equal(content[0].mimeType, "image/webp");
   assert.notDeepEqual(Buffer.from(content[0].data!, "base64"), source);
-  assert.match(JSON.stringify(content), /svg-glyph-path-v1/);
+  assert.match(JSON.stringify(content), /fontSize=16 · sharp-pango-v1/);
 });
 
 test("watermark debug details are opt-in", async () => {
@@ -66,10 +69,35 @@ test("watermark debug details are opt-in", async () => {
   try {
     const source = await sharp({ create: { width: 100, height: 80, channels: 3, background: "blue" } }).png().toBuffer();
     const response = await handleRpc({ jsonrpc: "2.0", id: 24, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "中文" } } });
-    assert.match(JSON.stringify(response), /glyphs=2/);
+    assert.match(JSON.stringify(response), /darwin\/arm64 · fontSize=16|linux\/[^ ]+ · fontSize=16/);
   } finally {
     delete process.env.WATERMARK_DEBUG;
   }
+});
+
+test("watermark validates the reference API limits", async () => {
+  const source = await sharp({ create: { width: 320, height: 200, channels: 3, background: "blue" } }).png().toBuffer();
+  const baseArguments = { image_base64: source.toString("base64"), text: "水印" };
+
+  const invalidPosition = await handleRpc({ jsonrpc: "2.0", id: 25, method: "tools/call", params: { name: "add_image_watermark", arguments: { ...baseArguments, position: "southeast" } } });
+  assert.equal((invalidPosition as { result: { isError: boolean } }).result.isError, true);
+  assert.match(JSON.stringify(invalidPosition), /水印位置无效/);
+
+  const longText = await handleRpc({ jsonrpc: "2.0", id: 26, method: "tools/call", params: { name: "add_image_watermark", arguments: { ...baseArguments, text: "水".repeat(41) } } });
+  assert.equal((longText as { result: { isError: boolean } }).result.isError, true);
+  assert.match(JSON.stringify(longText), /不能超过 40 个字符/);
+});
+
+test("watermark normalizes EXIF orientation and accepts markup characters as text", async () => {
+  const source = await sharp({ create: { width: 120, height: 80, channels: 3, background: "blue" } })
+    .jpeg()
+    .withMetadata({ orientation: 6 })
+    .toBuffer();
+  const response = await handleRpc({ jsonrpc: "2.0", id: 27, method: "tools/call", params: { name: "add_image_watermark", arguments: { image_base64: source.toString("base64"), text: "A&B <中文>", position: "top-center" } } });
+  const content = (response as { result: { content: { type: string; data?: string; mimeType?: string; text?: string }[] } }).result.content;
+  assert.equal(content[0].mimeType, "image/webp");
+  assert.match(content[1].text || "", /^80x120 ·/);
+  assert.deepEqual(await sharp(Buffer.from(content[0].data!, "base64")).metadata().then(({ width, height, format }) => ({ width, height, format })), { width: 80, height: 120, format: "webp" });
 });
 
 test("calendar tools expose today's Shanghai date for relative-time requests", async () => {

@@ -22,16 +22,15 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: "add_image_watermark",
-    description: "给 JPEG、PNG 或 WebP 图片添加文字水印，并直接返回处理后的图片。",
+    description: "给 JPEG、PNG 或 WebP 图片添加文字水印，自动纠正图片方向并返回 WebP 图片。",
     inputSchema: {
       type: "object",
       required: ["image_base64", "text"],
       properties: {
-        image_base64: { type: "string", description: "原始图片的 Base64 数据，不含 data URL 前缀，最大 3 MB。" },
-        text: { type: "string", maxLength: 200, description: "水印文字，最多 200 个字符。" },
-        position: { type: "string", enum: ["northwest", "northeast", "center", "southwest", "southeast"], default: "southeast", description: "水印位置：左上、右上、居中、左下或右下。" },
-        opacity: { type: "number", minimum: 0, maximum: 1, default: 0.35, description: "水印透明度，0 为完全透明，1 为完全不透明。" },
-        font_size: { type: "integer", minimum: 8, maximum: 500, description: "字体大小；不传时按图片短边自动计算。" },
+        image_base64: { type: "string", description: "原始图片的 Base64 数据，不含 data URL 前缀，最大 3 MB、1600 万像素。Base64 会增大 MCP 消息体，因此上限低于普通文件上传接口。" },
+        text: { type: "string", maxLength: 40, description: "水印文字，去除首尾空格后不能为空，最多 40 个字符。" },
+        position: { type: "string", enum: ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"], default: "bottom-right", description: "水印的九宫格位置。" },
+        font_size: { type: "integer", minimum: 1, description: "请求字号（像素）；不传时为图片短边的 20%，最终会限制在 12 px 到图片短边之间，并在文字过宽时自动缩小。" },
       },
     },
   },

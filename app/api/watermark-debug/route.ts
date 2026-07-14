@@ -26,7 +26,6 @@ export async function GET(request: Request) {
   const text = searchParams.get("text") || "水印调试 CN Test 123";
   const fontSize = Number(searchParams.get("fontSize")) || 48;
   const position = searchParams.get("position") || "center";
-  const opacity = Number(searchParams.get("opacity")) || 0.8;
 
   try {
     // Create a 800x600 solid blue image to apply the watermark on
@@ -43,14 +42,13 @@ export async function GET(request: Request) {
       image_base64: source.toString("base64"),
       text,
       font_size: fontSize,
-      position,
-      opacity
+      position
     });
 
     const imageBuffer = Buffer.from(result.data, "base64");
     return new Response(imageBuffer, {
       headers: {
-        "Content-Type": "image/png",
+        "Content-Type": result.mimeType,
         "Cache-Control": "no-store, max-age=0"
       }
     });
