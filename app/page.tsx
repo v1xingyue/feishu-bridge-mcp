@@ -51,8 +51,11 @@ const TOOL_GROUPS = [
 ] as const;
 
 export default function Home() {
+  return <Workspace view="documents" />;
+}
+
+export function Workspace({ view }: { view: View }) {
   const { data: session, status } = useSession();
-  const [view, setView] = useState<View>("documents");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [calendars, setCalendars] = useState<CalendarItem[]>([]);
   const [activeCalendar, setActiveCalendar] = useState("");
@@ -195,9 +198,9 @@ export default function Home() {
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">F</span><span>Feishu Bridge</span></div>
         <nav aria-label="主要导航">
-          <button className={view === "documents" ? "nav-item active" : "nav-item"} onClick={() => setView("documents")}><span className="nav-glyph doc-glyph" />文章与文档</button>
-          <button className={view === "calendar" ? "nav-item active" : "nav-item"} onClick={() => setView("calendar")}><span className="nav-glyph cal-glyph" />日程</button>
-          <button className={view === "connect" ? "nav-item active" : "nav-item"} onClick={() => setView("connect")}><span className="nav-glyph plug-glyph" />MCP 接入</button>
+          <a href="/documents" className={view === "documents" ? "nav-item active" : "nav-item"}><span className="nav-glyph doc-glyph" />文章与文档</a>
+          <a href="/calendar" className={view === "calendar" ? "nav-item active" : "nav-item"}><span className="nav-glyph cal-glyph" />日程</a>
+          <a href="/connect" className={view === "connect" ? "nav-item active" : "nav-item"}><span className="nav-glyph plug-glyph" />MCP 接入</a>
         </nav>
         <div className="sidebar-bottom">
           <span className={`status-dot ${configured ? "online" : ""}`} />
